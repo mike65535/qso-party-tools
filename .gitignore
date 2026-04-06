@@ -1,7 +1,7 @@
-# Contest data (logs, databases)
+# Contest data (logs, databases) — gitignored, supply your own
 data/
 
-# Generated outputs
+# Generated outputs — gitignored, produced by scripts
 outputs/
 
 # Python

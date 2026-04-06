@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""
+Contest processing pipeline orchestrator.
+Reads a contest config JSON and runs all scripts in sequence.
+
+Usage:
+    python3 scripts/process_contest.py config/nyqp_2025.json <logs_dir>
+
+Directory layout (relative to repo root):
+    data/<contest_id>/          - databases
+    outputs/<contest_id>/       - generated outputs
+      charts/                   - PNG charts and thumbnails
+      html/                     - HTML maps and stats
+      stats/                    - QC reports and JSON data files
+"""
+
+import json
+import sys
+import subprocess
+from pathlib import Path
+
+
+def run(script, args, script_dir):
+    """Run a script from the scripts/ directory, exit on failure."""
+    cmd = [sys.executable, str(script_dir / script)] + [str(a) for a in args]
+    print(f"\n>>> {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        print(f"\nERROR: {script} failed (exit {result.returncode})")
+        sys.exit(1)
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: process_contest.py <config.json> <logs_dir>")
+        print("  config.json  - contest config file (e.g. config/nyqp_2025.json)")
+        print("  logs_dir     - directory containing .log files")
+        sys.exit(1)
+
+    config_path = Path(sys.argv[1])
+    logs_dir = Path(sys.argv[2])
+
+    if not config_path.exists():
+        print(f"Config file not found: {config_path}")
+        sys.exit(1)
+    if not logs_dir.is_dir():
+        print(f"Logs directory not found: {logs_dir}")
+        sys.exit(1)
+
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    contest_id = config['contest_id']
+    contest_name = f"{config['year']} {config['name']}"
+    contest_start = f"{config['schedule']['date']} {config['schedule']['start_time'].replace('Z', '')}"
+    duration_hours = config['schedule']['duration_hours']
+
+    # Derived paths
+    repo_root = Path(__file__).parent.parent
+    script_dir = repo_root / 'scripts'
+    data_dir = repo_root / 'data' / contest_id
+    output_dir = repo_root / 'outputs' / contest_id
+    charts_dir = output_dir / 'charts'
+    html_dir = output_dir / 'html'
+    stats_dir = output_dir / 'stats'
+
+    meta_db = data_dir / 'contest_meta.db'
+    qso_db = data_dir / 'contest_qsos.db'
+    mobiles_json = stats_dir / 'mobile_stations.json'
+    county_counts_json = stats_dir / 'county_qso_counts_all.json'
+    county_line_json = stats_dir / 'county_line_periods.json'
+    enhanced_map_html = html_dir / f'{contest_id}_enhanced_map.html'
+
+    for d in [data_dir, charts_dir, html_dir, stats_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    print(f"=== Processing: {contest_name} ===")
+    print(f"  Logs:    {logs_dir}")
+    print(f"  Data:    {data_dir}")
+    print(f"  Outputs: {output_dir}")
+
+    # 1. Build databases
+    print("\n[1/8] Creating databases...")
+    run('create_sql_db.py', [logs_dir, data_dir], script_dir)
+
+    # 2. Detect mobile stations
+    print("\n[2/8] Detecting mobile stations...")
+    run('mobile_detector.py', [
+        '--db', qso_db,
+        '--output', mobiles_json,
+        '--verbose'
+    ], script_dir)
+
+    # 3. Generate county-line periods
+    print("\n[3/8] Generating county-line periods...")
+    run('county_line_periods.py', [
+        '--db', qso_db,
+        '--mobiles', mobiles_json,
+        '--output', county_line_json,
+        '--verbose'
+    ], script_dir)
+
+    # 4. Generate county QSO counts
+    print("\n[4/8] Generating county QSO counts...")
+    run('county_qso_counts.py', [
+        '--db', qso_db,
+        '--filter', 'all',
+        '--output', county_counts_json,
+        '--verbose'
+    ], script_dir)
+
+    # 5. Generate charts
+    print("\n[5/8] Generating analysis charts...")
+    run('create_charts.py', [
+        '--meta-db', meta_db,
+        '--qso-db', qso_db,
+        '--output-dir', charts_dir,
+        '--contest-id', contest_id.upper().replace('-', '_'),
+        '--contest-start', contest_start,
+        '--duration-hours', duration_hours
+    ], script_dir)
+
+    # 6. Generate thumbnails
+    print("\n[6/8] Generating chart thumbnails...")
+    run('create_thumbnails.py', [
+        '--charts-dir', charts_dir
+    ], script_dir)
+
+    # 7. Generate contest stats
+    print("\n[7/8] Generating contest statistics...")
+    run('generate_stats.py', [
+        '--meta-db', meta_db,
+        '--qso-db', qso_db,
+        '--output-dir', html_dir,
+        '--contest-name', contest_name
+    ], script_dir)
+
+    # 8. Generate enhanced map
+    print("\n[8/8] Generating enhanced county map...")
+    boundaries = repo_root / 'reference' / 'ny_counties.json'
+    run('generate_enhanced_map.py', [
+        '--meta-db', meta_db,
+        '--qso-db', qso_db,
+        '--output', enhanced_map_html,
+        '--boundaries', boundaries,
+        '--title', f'QSOs made from {config.get("host_state", "host")} stations'
+    ], script_dir)
+
+    print(f"\n=== Done! Outputs in {output_dir} ===")
+
+
+if __name__ == '__main__':
+    main()

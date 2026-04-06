@@ -1,0 +1,1 @@
+# QSO Party Tools Library
