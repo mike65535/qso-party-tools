@@ -39,9 +39,37 @@ NY_COUNTY_NAMES = {
 }
 
 
+def _detect_contest_window(qso_db, contest_start, contest_end):
+    """Derive actual contest date from DB (handles year mismatches between config and data)."""
+    from datetime import timedelta as _td
+    conn = sqlite3.connect(qso_db)
+    row = conn.execute("""
+        SELECT DATE(datetime) FROM qsos WHERE tx_county IS NOT NULL AND tx_county != ''
+        GROUP BY DATE(datetime) ORDER BY COUNT(*) DESC LIMIT 1
+    """).fetchone()
+    conn.close()
+    if not row:
+        return contest_start, contest_end
+    contest_date = row[0]
+    start_time_str = contest_start.split('T')[-1] if 'T' in contest_start else contest_start[11:]
+    end_time_str   = contest_end.split('T')[-1]   if 'T' in contest_end   else contest_end[11:]
+    s = datetime.strptime(f"{contest_date} {start_time_str}", '%Y-%m-%d %H:%M:%S')
+    e_base = datetime.strptime(f"2000-01-01 {end_time_str}", '%Y-%m-%d %H:%M:%S')
+    s_base = datetime.strptime(f"2000-01-01 {start_time_str}", '%Y-%m-%d %H:%M:%S')
+    offset = 1 if e_base <= s_base else 0
+    e_date = (s + _td(days=offset)).strftime('%Y-%m-%d')
+    e = datetime.strptime(f"{e_date} {end_time_str}", '%Y-%m-%d %H:%M:%S')
+    actual_start = s.strftime('%Y-%m-%dT%H:%M:%S')
+    actual_end   = e.strftime('%Y-%m-%dT%H:%M:%S')
+    print(f"Contest date detected from DB: {contest_date} → window {actual_start} to {actual_end}")
+    return actual_start, actual_end
+
+
 def generate_county_animation(qso_db, boundaries_file, output_file, contest_start, contest_end, title):
     with open(boundaries_file, 'r') as f:
         boundaries_data = json.load(f)
+
+    contest_start, contest_end = _detect_contest_window(qso_db, contest_start, contest_end)
 
     conn = sqlite3.connect(qso_db)
     cursor = conn.execute("""
