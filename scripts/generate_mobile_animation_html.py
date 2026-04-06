@@ -12,7 +12,8 @@ import os
 from pathlib import Path
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from lib.animation_controls import get_controls_css, get_legend_css
+from lib.animation_controls import get_controls_css
+from lib.animation_legend import get_legend_css
 
 NY_COUNTY_NAMES = {
     "ALB": "Albany County", "ALL": "Allegany County", "BRX": "Bronx County", "BRM": "Broome County",
