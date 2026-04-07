@@ -179,9 +179,39 @@ def generate_contest_stats(meta_db, qso_db):
         ).fetchone()[0]
     else:
         stats['qsos_by_ny'] = 0
+
+    # Filtered QSOs for audit
+    rows = qso_conn.execute("""
+        SELECT id, log_file, station_call, datetime, freq, mode,
+               tx_call, tx_county, rx_call, rx_county
+        FROM qsos
+        WHERE id NOT IN (SELECT id FROM valid_qsos)
+        ORDER BY log_file, datetime
+    """).fetchall()
+    stats['filtered_qsos'] = [
+        {
+            'id': r[0], 'log_file': r[1], 'station_call': r[2],
+            'datetime': r[3], 'freq': r[4], 'mode': r[5],
+            'tx_call': r[6], 'tx_county': r[7],
+            'rx_call': r[8], 'rx_county': r[9],
+            'reason': _filter_reason(r[7], r[9]),
+        }
+        for r in rows
+    ]
     qso_conn.close()
 
     return stats
+
+
+def _filter_reason(tx_county, rx_county):
+    """Human-readable reason why a QSO was excluded from valid_qsos."""
+    reasons = []
+    for label, val in [('tx_county', tx_county or ''), ('rx_county', rx_county or '')]:
+        if '/' in val:
+            reasons.append(f"{label} is county-line slash format ({val!r})")
+        elif len(val) < 2 or len(val) > 3:
+            reasons.append(f"{label} has unexpected length ({val!r})")
+    return '; '.join(reasons) if reasons else 'unknown'
 
 
 def _mode_breakdown_table(title, rows_data, label_col, label_fn=None):
@@ -294,8 +324,59 @@ def format_stats_html(stats, contest_name):
             label_col="State"
         )
 
+    if stats.get('filtered_qsos') is not None:
+        html += _filtered_qsos_table(stats['filtered_qsos'])
+
     html += '</div>'
     return html
+
+
+def _filtered_qsos_table(filtered_qsos):
+    """Render a table of QSOs excluded by the valid_qsos filter for human audit."""
+    count = len(filtered_qsos)
+    heading = f"Filtered QSOs — Data Quality Audit ({count} excluded)"
+
+    css = """
+    <style>
+      .audit-table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.85em; }
+      .audit-table th { background: #7b241c; color: white; padding: 4px 8px; text-align: left; }
+      .audit-table td { border: 1px solid #ccc; padding: 3px 7px; vertical-align: top; }
+      .audit-table tr:nth-child(even) { background: #fdf2f2; }
+      .audit-table td.reason { color: #7b241c; font-style: italic; }
+    </style>"""
+
+    if count == 0:
+        return f'{css}<div class="stat-section"><h3>{heading}</h3><p>None — all QSOs passed validation.</p></div>\n'
+
+    hdr = (
+        f'<div class="stat-section"><h3>{heading}</h3>'
+        f'<table class="audit-table"><thead><tr>'
+        f'<th>Log File</th><th>Station</th><th>Datetime</th>'
+        f'<th>Freq</th><th>Mode</th>'
+        f'<th>Tx Call</th><th>Tx County</th>'
+        f'<th>Rx Call</th><th>Rx County</th>'
+        f'<th>Reason</th>'
+        f'</tr></thead><tbody>'
+    )
+
+    body = ''
+    for q in filtered_qsos:
+        body += (
+            f'<tr>'
+            f'<td>{q["log_file"]}</td>'
+            f'<td>{q["station_call"]}</td>'
+            f'<td>{q["datetime"]}</td>'
+            f'<td>{q["freq"]}</td>'
+            f'<td>{q["mode"]}</td>'
+            f'<td>{q["tx_call"]}</td>'
+            f'<td><b>{q["tx_county"]}</b></td>'
+            f'<td>{q["rx_call"]}</td>'
+            f'<td><b>{q["rx_county"]}</b></td>'
+            f'<td class="reason">{q["reason"]}</td>'
+            f'</tr>'
+        )
+
+    return css + hdr + body + '</tbody></table></div>\n'
 
 
 def main():
