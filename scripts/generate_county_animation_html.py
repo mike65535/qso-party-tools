@@ -41,7 +41,7 @@ NY_COUNTY_NAMES = {
 
 def _detect_contest_window(qso_db, contest_start, contest_end):
     """Derive actual contest date from DB (handles year mismatches between config and data)."""
-    from datetime import timedelta as _td
+    from datetime import datetime, timedelta as _td
     conn = sqlite3.connect(qso_db)
     row = conn.execute("""
         SELECT DATE(datetime) FROM qsos WHERE tx_county IS NOT NULL AND tx_county != ''
