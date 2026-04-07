@@ -8,6 +8,122 @@ import json
 import argparse
 from pathlib import Path
 
+# NY county abbreviations — used to group county-level QSOs under state 'NY'
+NY_COUNTIES = {
+    'ALB','ALL','BRM','BRX','CAT','CAY','CHA','CHE','CGO','CLI',
+    'COL','COR','DEL','DUT','ERI','ESS','FRA','FUL','GEN','GRE',
+    'HAM','HER','JEF','KIN','LEW','LIV','MAD','MON','MTG','NAS',
+    'NEW','NIA','ONE','ONO','ONT','ORA','ORL','OSW','OTS','PUT',
+    'QUE','REN','RIC','ROC','SAR','SCH','SCO','SCU','SEN','STE',
+    'STL','SUF','SUL','TIO','TOM','ULS','WAR','WAS','WAY','WES',
+    'WYO','YAT',
+}
+
+NY_COUNTY_NAMES = {
+    "ALB": "Albany",    "ALL": "Allegany",  "BRX": "Bronx",      "BRM": "Broome",
+    "CAT": "Cattaraugus","CAY": "Cayuga",   "CHA": "Chautauqua", "CHE": "Chemung",
+    "CGO": "Chenango",  "CLI": "Clinton",   "COL": "Columbia",   "COR": "Cortland",
+    "DEL": "Delaware",  "DUT": "Dutchess",  "ERI": "Erie",       "ESS": "Essex",
+    "FRA": "Franklin",  "FUL": "Fulton",    "GEN": "Genesee",    "GRE": "Greene",
+    "HAM": "Hamilton",  "HER": "Herkimer",  "JEF": "Jefferson",  "KIN": "Kings",
+    "LEW": "Lewis",     "LIV": "Livingston","MAD": "Madison",    "MON": "Monroe",
+    "MTG": "Montgomery","NAS": "Nassau",    "NEW": "New York",   "NIA": "Niagara",
+    "ONE": "Oneida",    "ONO": "Onondaga",  "ONT": "Ontario",    "ORA": "Orange",
+    "ORL": "Orleans",   "OSW": "Oswego",    "OTS": "Otsego",     "PUT": "Putnam",
+    "QUE": "Queens",    "REN": "Rensselaer","RIC": "Richmond",   "ROC": "Rockland",
+    "SAR": "Saratoga",  "SCH": "Schenectady","SCO": "Schoharie", "SCU": "Schuyler",
+    "SEN": "Seneca",    "STL": "St. Lawrence","STE": "Steuben",  "SUF": "Suffolk",
+    "SUL": "Sullivan",  "TIO": "Tioga",     "TOM": "Tompkins",   "ULS": "Ulster",
+    "WAR": "Warren",    "WAS": "Washington","WAY": "Wayne",      "WES": "Westchester",
+    "WYO": "Wyoming",   "YAT": "Yates",
+}
+
+
+def _mode_case(col):
+    """SQL CASE expression mapping raw mode values to CW/PH/DIG."""
+    return (
+        f"SUM(CASE WHEN {col}='CW' THEN 1 ELSE 0 END),"
+        f"SUM(CASE WHEN {col} IN ('PH','FM','SSB','AM') THEN 1 ELSE 0 END),"
+        f"SUM(CASE WHEN {col} IN ('DG','RY','DIG','FT8','FT4','PSK','RTTY') THEN 1 ELSE 0 END)"
+    )
+
+
+def generate_county_breakdown(qso_db, host_counties=None):
+    """Return per-county sent/received counts by mode for host-state counties."""
+    counties = host_counties or NY_COUNTIES
+    placeholders = ','.join(f"'{c}'" for c in counties)
+
+    conn = sqlite3.connect(qso_db)
+    sent_sql = f"""
+        SELECT tx_county,
+            {_mode_case('mode')},
+            COUNT(*)
+        FROM qsos WHERE tx_county IN ({placeholders})
+        GROUP BY tx_county
+    """
+    rcvd_sql = f"""
+        SELECT rx_county,
+            {_mode_case('mode')},
+            COUNT(*)
+        FROM qsos WHERE rx_county IN ({placeholders})
+        GROUP BY rx_county
+    """
+
+    sent = {r[0]: {'cw': r[1], 'ph': r[2], 'dig': r[3], 'total': r[4]}
+            for r in conn.execute(sent_sql)}
+    rcvd = {r[0]: {'cw': r[1], 'ph': r[2], 'dig': r[3], 'total': r[4]}
+            for r in conn.execute(rcvd_sql)}
+    conn.close()
+
+    result = {}
+    for county in sorted(counties):
+        result[county] = {
+            'sent': sent.get(county, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
+            'rcvd': rcvd.get(county, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
+        }
+    return result
+
+
+def generate_state_breakdown(qso_db, host_counties=None, host_state='NY'):
+    """Return per-state sent/received counts by mode."""
+    counties = host_counties or NY_COUNTIES
+    placeholders = ','.join(f"'{c}'" for c in counties)
+
+    conn = sqlite3.connect(qso_db)
+    sent_sql = f"""
+        SELECT
+            CASE WHEN UPPER(tx_county) IN ({placeholders}) THEN '{host_state}'
+                 ELSE UPPER(tx_county) END as state,
+            {_mode_case('mode')},
+            COUNT(*)
+        FROM qsos WHERE tx_county IS NOT NULL AND tx_county != ''
+        GROUP BY state
+    """
+    rcvd_sql = f"""
+        SELECT
+            CASE WHEN UPPER(rx_county) IN ({placeholders}) THEN '{host_state}'
+                 ELSE UPPER(rx_county) END as state,
+            {_mode_case('mode')},
+            COUNT(*)
+        FROM qsos WHERE rx_county IS NOT NULL AND rx_county != ''
+        GROUP BY state
+    """
+
+    sent = {r[0]: {'cw': r[1], 'ph': r[2], 'dig': r[3], 'total': r[4]}
+            for r in conn.execute(sent_sql)}
+    rcvd = {r[0]: {'cw': r[1], 'ph': r[2], 'dig': r[3], 'total': r[4]}
+            for r in conn.execute(rcvd_sql)}
+    conn.close()
+
+    all_states = sorted(set(sent) | set(rcvd))
+    result = {}
+    for state in all_states:
+        result[state] = {
+            'sent': sent.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
+            'rcvd': rcvd.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
+        }
+    return result
+
 
 def generate_contest_stats(meta_db, qso_db):
     """Generate summary statistics from the databases."""
@@ -68,6 +184,69 @@ def generate_contest_stats(meta_db, qso_db):
     return stats
 
 
+def _mode_breakdown_table(title, rows_data, label_col, label_fn=None):
+    """Render a sent/received by mode HTML table.
+
+    rows_data: dict of label → {'sent': {cw,ph,dig,total}, 'rcvd': {cw,ph,dig,total}}
+    label_fn: optional callable to format the row label
+    """
+    table_css = """
+    <style>
+      .breakdown-table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.9em; }
+      .breakdown-table th, .breakdown-table td { border: 1px solid #ccc; padding: 4px 8px; text-align: right; }
+      .breakdown-table th { background: #2c3e50; color: white; text-align: center; }
+      .breakdown-table th.label-col { text-align: left; }
+      .breakdown-table td.label-col { text-align: left; font-weight: bold; }
+      .breakdown-table tr:nth-child(even) { background: #f5f5f5; }
+      .breakdown-table td.total { font-weight: bold; background: #eaf0fb; }
+      .breakdown-table tfoot td { font-weight: bold; background: #dce8f7; }
+      .breakdown-group { display: inline-block; width: 100%; overflow-x: auto; }
+    </style>"""
+
+    hdr = (
+        f'<div class="breakdown-group">'
+        f'<h3>{title}</h3>'
+        f'<table class="breakdown-table">'
+        f'<thead><tr>'
+        f'<th class="label-col">{label_col}</th>'
+        f'<th>CW Sent</th><th>CW Rcvd</th>'
+        f'<th>PH Sent</th><th>PH Rcvd</th>'
+        f'<th>DIG Sent</th><th>DIG Rcvd</th>'
+        f'<th class="total">Total Sent</th><th class="total">Total Rcvd</th>'
+        f'</tr></thead><tbody>'
+    )
+
+    body = ''
+    tot_s = {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}
+    tot_r = {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}
+    for label, d in rows_data.items():
+        s, r = d['sent'], d['rcvd']
+        display = label_fn(label) if label_fn else label
+        body += (
+            f'<tr>'
+            f'<td class="label-col">{display}</td>'
+            f'<td>{s["cw"]:,}</td><td>{r["cw"]:,}</td>'
+            f'<td>{s["ph"]:,}</td><td>{r["ph"]:,}</td>'
+            f'<td>{s["dig"]:,}</td><td>{r["dig"]:,}</td>'
+            f'<td class="total">{s["total"]:,}</td><td class="total">{r["total"]:,}</td>'
+            f'</tr>'
+        )
+        for k in tot_s:
+            tot_s[k] += s[k]
+            tot_r[k] += r[k]
+
+    footer = (
+        f'</tbody><tfoot><tr>'
+        f'<td class="label-col">TOTAL</td>'
+        f'<td>{tot_s["cw"]:,}</td><td>{tot_r["cw"]:,}</td>'
+        f'<td>{tot_s["ph"]:,}</td><td>{tot_r["ph"]:,}</td>'
+        f'<td>{tot_s["dig"]:,}</td><td>{tot_r["dig"]:,}</td>'
+        f'<td class="total">{tot_s["total"]:,}</td><td class="total">{tot_r["total"]:,}</td>'
+        f'</tr></tfoot></table></div>'
+    )
+    return table_css + hdr + body + footer
+
+
 def format_stats_html(stats, contest_name):
     """Format stats as an HTML fragment."""
 
@@ -100,6 +279,21 @@ def format_stats_html(stats, contest_name):
     if stats.get('power_levels'):
         html += section("Power Levels", stats['power_levels'])
 
+    if stats.get('county_breakdown'):
+        def county_label(abbrev):
+            name = NY_COUNTY_NAMES.get(abbrev, abbrev)
+            return f"{abbrev} – {name}"
+        html += _mode_breakdown_table(
+            "QSOs by Host-State County", stats['county_breakdown'],
+            label_col="County", label_fn=county_label
+        )
+
+    if stats.get('state_breakdown'):
+        html += _mode_breakdown_table(
+            "QSOs by State / Province", stats['state_breakdown'],
+            label_col="State"
+        )
+
     html += '</div>'
     return html
 
@@ -116,6 +310,8 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     stats = generate_contest_stats(args.meta_db, args.qso_db)
+    stats['county_breakdown'] = generate_county_breakdown(args.qso_db)
+    stats['state_breakdown'] = generate_state_breakdown(args.qso_db)
 
     json_path = output_dir / 'contest_stats.json'
     with open(json_path, 'w') as f:
