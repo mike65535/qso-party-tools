@@ -72,7 +72,7 @@ class MobileDetector:
                        COUNT(DISTINCT tx_county) as county_count,
                        GROUP_CONCAT(DISTINCT tx_county) as counties,
                        MIN(datetime) as first_qso, MAX(datetime) as last_qso
-                FROM qsos
+                FROM valid_qsos
                 WHERE tx_call IN ({placeholders})
                   AND tx_county IN ({county_placeholders})
                 GROUP BY tx_call
@@ -86,7 +86,7 @@ class MobileDetector:
                        COUNT(DISTINCT tx_county) as county_count,
                        GROUP_CONCAT(DISTINCT tx_county) as counties,
                        MIN(datetime) as first_qso, MAX(datetime) as last_qso
-                FROM qsos
+                FROM valid_qsos
                 WHERE tx_call IN ({placeholders})
                 GROUP BY tx_call
                 HAVING county_count >= ? AND total_qsos >= ?
@@ -102,7 +102,7 @@ class MobileDetector:
                        COUNT(DISTINCT tx_county) as county_count,
                        GROUP_CONCAT(DISTINCT tx_county) as counties,
                        MIN(datetime) as first_qso, MAX(datetime) as last_qso
-                FROM qsos
+                FROM valid_qsos
                 WHERE tx_county IN ({county_placeholders})
                 GROUP BY tx_call
                 HAVING county_count >= ? AND total_qsos >= ?
@@ -115,7 +115,7 @@ class MobileDetector:
                        COUNT(DISTINCT tx_county) as county_count,
                        GROUP_CONCAT(DISTINCT tx_county) as counties,
                        MIN(datetime) as first_qso, MAX(datetime) as last_qso
-                FROM qsos
+                FROM valid_qsos
                 GROUP BY tx_call
                 HAVING county_count >= ? AND total_qsos >= ?
                 ORDER BY tx_call

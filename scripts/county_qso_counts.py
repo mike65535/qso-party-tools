@@ -27,13 +27,13 @@ class CountyQSOCounter:
 
         if filter_type == "all":
             cursor.execute("""
-                SELECT tx_county, COUNT(*) FROM qsos GROUP BY tx_county ORDER BY COUNT(*) DESC
+                SELECT tx_county, COUNT(*) FROM valid_qsos GROUP BY tx_county ORDER BY COUNT(*) DESC
             """)
 
         elif filter_type in ("mobile_only", "station_list") and station_list:
             placeholders = ','.join('?' * len(station_list))
             cursor.execute(f"""
-                SELECT tx_county, COUNT(*) FROM qsos
+                SELECT tx_county, COUNT(*) FROM valid_qsos
                 WHERE tx_call IN ({placeholders})
                 GROUP BY tx_county ORDER BY COUNT(*) DESC
             """, station_list)
@@ -41,7 +41,7 @@ class CountyQSOCounter:
         elif filter_type == "fixed_only" and station_list:
             placeholders = ','.join('?' * len(station_list))
             cursor.execute(f"""
-                SELECT tx_county, COUNT(*) FROM qsos
+                SELECT tx_county, COUNT(*) FROM valid_qsos
                 WHERE tx_call NOT IN ({placeholders})
                 GROUP BY tx_county ORDER BY COUNT(*) DESC
             """, station_list)

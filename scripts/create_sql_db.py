@@ -122,6 +122,14 @@ class ContestDatabaseCreator:
                                 log_file.name
                             ))
 
+        conn.execute('''
+            CREATE VIEW IF NOT EXISTS valid_qsos AS
+            SELECT * FROM qsos
+            WHERE instr(COALESCE(tx_county,''), '/') = 0
+              AND instr(COALESCE(rx_county,''), '/') = 0
+              AND length(COALESCE(tx_county,'')) BETWEEN 2 AND 3
+              AND length(COALESCE(rx_county,'')) BETWEEN 2 AND 3
+        ''')
         conn.commit()
         conn.close()
         print(f"Created {db_path}")

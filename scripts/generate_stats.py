@@ -58,14 +58,14 @@ def generate_county_breakdown(qso_db, host_counties=None):
         SELECT tx_county,
             {_mode_case('mode')},
             COUNT(*)
-        FROM qsos WHERE tx_county IN ({placeholders})
+        FROM valid_qsos WHERE tx_county IN ({placeholders})
         GROUP BY tx_county
     """
     rcvd_sql = f"""
         SELECT rx_county,
             {_mode_case('mode')},
             COUNT(*)
-        FROM qsos WHERE rx_county IN ({placeholders})
+        FROM valid_qsos WHERE rx_county IN ({placeholders})
         GROUP BY rx_county
     """
 
@@ -96,7 +96,7 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY'):
                  ELSE UPPER(tx_county) END as state,
             {_mode_case('mode')},
             COUNT(*)
-        FROM qsos WHERE tx_county IS NOT NULL AND tx_county != ''
+        FROM valid_qsos WHERE tx_county IS NOT NULL AND tx_county != ''
         GROUP BY state
     """
     rcvd_sql = f"""
@@ -105,7 +105,7 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY'):
                  ELSE UPPER(rx_county) END as state,
             {_mode_case('mode')},
             COUNT(*)
-        FROM qsos WHERE rx_county IS NOT NULL AND rx_county != ''
+        FROM valid_qsos WHERE rx_county IS NOT NULL AND rx_county != ''
         GROUP BY state
     """
 
@@ -171,11 +171,11 @@ def generate_contest_stats(meta_db, qso_db):
     meta_conn.close()
 
     qso_conn = sqlite3.connect(qso_db)
-    stats['total_qsos'] = qso_conn.execute("SELECT COUNT(*) FROM qsos").fetchone()[0]
+    stats['total_qsos'] = qso_conn.execute("SELECT COUNT(*) FROM valid_qsos").fetchone()[0]
     if ny_callsigns:
         placeholders = ','.join('?' * len(ny_callsigns))
         stats['qsos_by_ny'] = qso_conn.execute(
-            f"SELECT COUNT(*) FROM qsos WHERE station_call IN ({placeholders})", ny_callsigns
+            f"SELECT COUNT(*) FROM valid_qsos WHERE station_call IN ({placeholders})", ny_callsigns
         ).fetchone()[0]
     else:
         stats['qsos_by_ny'] = 0

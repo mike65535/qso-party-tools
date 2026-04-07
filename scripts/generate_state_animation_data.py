@@ -28,47 +28,23 @@ def generate_state_animation_data(qso_db, output_file, contest_start_str,
     host_counties_upper = {c.upper() for c in host_counties}
     host_state = host_state.upper()
 
+    fmt = '%Y-%m-%dT%H:%M:%S' if 'T' in contest_start_str else '%Y-%m-%d %H:%M:%S'
+    start_time = datetime.strptime(contest_start_str, fmt)
+    end_time   = datetime.strptime(contest_end_str,   fmt)
+    print(f"Using contest window: {start_time} to {end_time}")
+
     conn = sqlite3.connect(qso_db)
     cursor = conn.cursor()
-
-    # Auto-detect contest date from the DB — use the date with the most QSO activity.
-    # This handles cases where the DB contains logs from a different year than the config.
-    cursor.execute("""
-        SELECT DATE(datetime) as d, COUNT(*) as n
-        FROM qsos WHERE tx_county IS NOT NULL AND tx_county != ''
-        GROUP BY d ORDER BY n DESC LIMIT 1
-    """)
-    row = cursor.fetchone()
-    if not row:
-        print("ERROR: No QSO data found in database")
-        conn.close()
-        return
-    contest_date = row[0]
-
-    config_start_time = contest_start_str.split('T')[-1] if 'T' in contest_start_str else contest_start_str[11:]
-    config_end_time   = contest_end_str.split('T')[-1]   if 'T' in contest_end_str   else contest_end_str[11:]
-
-    start_time = datetime.strptime(f"{contest_date} {config_start_time}", '%Y-%m-%d %H:%M:%S')
-
-    config_start_dt = datetime.strptime(f"2000-01-01 {config_start_time}", '%Y-%m-%d %H:%M:%S')
-    config_end_dt   = datetime.strptime(f"2000-01-01 {config_end_time}",   '%Y-%m-%d %H:%M:%S')
-    end_date_offset = 1 if config_end_dt <= config_start_dt else 0
-    end_date = (start_time + timedelta(days=end_date_offset)).strftime('%Y-%m-%d')
-    end_time = datetime.strptime(f"{end_date} {config_end_time}", '%Y-%m-%d %H:%M:%S')
-
-    print(f"Contest date detected from DB: {contest_date} (most active day)")
-    print(f"Using window: {start_time} to {end_time}")
 
     # Build SQL CASE clause to map host counties -> host state
     county_list = "','".join(sorted(host_counties_upper))
     query = f"""
     SELECT datetime, station_call, tx_county,
         CASE WHEN UPPER(tx_county) IN ('{county_list}') THEN '{host_state}'
-             ELSE UPPER(SUBSTR(tx_county, -2))
+             ELSE UPPER(tx_county)
         END as state
-    FROM qsos
-    WHERE tx_county IS NOT NULL AND tx_county != ''
-      AND datetime >= ? AND datetime <= ?
+    FROM valid_qsos
+    WHERE datetime >= ? AND datetime <= ?
     ORDER BY datetime
     """
 

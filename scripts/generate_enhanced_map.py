@@ -16,11 +16,11 @@ def get_county_data(meta_db, qso_db, valid_counties):
     """Extract county QSO data from databases."""
     qso_conn = sqlite3.connect(qso_db)
 
-    total_qsos = qso_conn.execute("SELECT COUNT(*) FROM qsos").fetchone()[0]
+    total_qsos = qso_conn.execute("SELECT COUNT(*) FROM valid_qsos").fetchone()[0]
 
     cursor = qso_conn.execute("""
         SELECT tx_county, tx_call, COUNT(*) as qso_count
-        FROM qsos
+        FROM valid_qsos
         WHERE tx_county IS NOT NULL AND tx_county != ''
         GROUP BY tx_county, tx_call
         ORDER BY tx_county, qso_count DESC

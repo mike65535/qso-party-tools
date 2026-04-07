@@ -20,7 +20,7 @@ def create_score_boxplot(meta_db, qso_db, output_dir, contest_id):
 
     qso_counts = pd.read_sql_query("""
         SELECT station_call, COUNT(*) as qso_count
-        FROM (SELECT DISTINCT station_call, datetime, freq, tx_call, rx_call FROM qsos)
+        FROM (SELECT DISTINCT station_call, datetime, freq, tx_call, rx_call FROM valid_qsos)
         GROUP BY station_call
     """, sqlite3.connect(qso_db))
 
@@ -61,7 +61,7 @@ def create_qso_distribution(meta_db, qso_db, output_dir, contest_id):
     )['callsign'].tolist()
 
     qsos = pd.read_sql_query("""
-        SELECT DISTINCT station_call, mode, tx_call, rx_call, datetime, freq FROM qsos
+        SELECT DISTINCT station_call, mode, tx_call, rx_call, datetime, freq FROM valid_qsos
     """, sqlite3.connect(qso_db))
 
     qsos['tx_location'] = qsos['tx_call'].apply(lambda x: 'NY' if x in ny_stations else 'Non-NY')
@@ -94,7 +94,7 @@ def create_qso_distribution(meta_db, qso_db, output_dir, contest_id):
 
 def create_qso_histogram(qso_db, output_dir, contest_id):
     qso_counts = pd.read_sql_query(
-        "SELECT station_call, COUNT(*) as qso_total FROM qsos GROUP BY station_call",
+        "SELECT station_call, COUNT(*) as qso_total FROM valid_qsos GROUP BY station_call",
         sqlite3.connect(qso_db)
     )
     max_qsos = int(qso_counts['qso_total'].max())
@@ -116,7 +116,7 @@ def create_qso_histogram(qso_db, output_dir, contest_id):
 def _build_interval_data(qso_db):
     """Load QSOs and bin into 15-minute intervals with band and mode columns."""
     qsos = pd.read_sql_query(
-        "SELECT DISTINCT station_call, freq, mode, date, time FROM qsos ORDER BY date, time",
+        "SELECT DISTINCT station_call, freq, mode, date, time FROM valid_qsos ORDER BY date, time",
         sqlite3.connect(qso_db)
     )
 

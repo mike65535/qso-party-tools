@@ -40,7 +40,7 @@ class CountyLinePeriodGenerator:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, datetime, tx_county FROM qsos WHERE tx_call = ? ORDER BY datetime",
+            "SELECT id, datetime, tx_county FROM valid_qsos WHERE tx_call = ? ORDER BY datetime",
             (callsign,)
         )
         rows = cursor.fetchall()
