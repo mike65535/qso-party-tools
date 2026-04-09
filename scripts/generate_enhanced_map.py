@@ -98,10 +98,11 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
         }}
         .leaflet-interactive {{ outline: none !important; }}
         .leaflet-interactive:focus {{ outline: none !important; }}
-        .map-legend {{ background: white; padding: 10px 14px; border-radius: 6px;
+        #map-legend {{ position: absolute; top: 10px; right: 10px; z-index: 1000;
+                       background: white; padding: 10px 14px; border-radius: 6px;
                        box-shadow: 0 1px 5px rgba(0,0,0,0.3); line-height: 1.6;
                        font-size: 13px; min-width: 160px; }}
-        .map-legend h4 {{ margin: 0 0 6px 0; font-size: 13px; color: #333; }}
+        #map-legend h4 {{ margin: 0 0 6px 0; font-size: 13px; color: #333; }}
         .map-legend-item {{ display: flex; align-items: center; gap: 8px; margin: 2px 0; }}
         .map-legend-swatch {{ width: 18px; height: 18px; border: 1px solid #aaa;
                               flex-shrink: 0; border-radius: 2px; }}
@@ -109,6 +110,7 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
 </head>
 <body>
     <div id="map"></div>
+    <div id="map-legend"><h4>QSOs per County</h4></div>
     <div id="info">{title} | {total_qsos_by_county:,} QSOs from {active_counties} of {num_counties} Counties</div>
     <script>
         const boundaries = {boundaries_json};
@@ -209,29 +211,23 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
 
         // Legend
         const maxQsos = Math.max(...Object.values(countyData).map(d => d.qsos));
-        const thresholds = [0.8, 0.6, 0.4, 0.2, 0.1, 0.05, 0.01];
-        const colors    = ['#800026','#BD0026','#E31A1C','#FC4E2A','#FD8D3C','#FEB24C','#FED976'];
-        const legend = L.control({{ position: 'topleft' }});
-        legend.onAdd = function() {{
-            const div = L.DomUtil.create('div', 'map-legend');
-            div.innerHTML = '<h4>QSOs per County</h4>';
-            thresholds.forEach((t, i) => {{
-                const lo = Math.round(t * maxQsos);
-                const hi = i === 0 ? maxQsos : Math.round(thresholds[i-1] * maxQsos) - 1;
-                const label = i === 0 ? `&gt; ${{lo.toLocaleString()}}` : `${{lo.toLocaleString()}} – ${{hi.toLocaleString()}}`;
-                div.innerHTML += `<div class="map-legend-item">
-                    <div class="map-legend-swatch" style="background:${{colors[i]}}"></div>
-                    <span>${{label}}</span></div>`;
-            }});
-            div.innerHTML += `<div class="map-legend-item">
-                <div class="map-legend-swatch" style="background:#FED976"></div>
-                <span>1 – ${{Math.round(0.05 * maxQsos).toLocaleString()}}</span></div>`;
-            div.innerHTML += `<div class="map-legend-item">
-                <div class="map-legend-swatch" style="background:#e8e8e8"></div>
-                <span>No activity</span></div>`;
-            return div;
-        }};
-        legend.addTo(map);
+        const thresholds = [0.8, 0.6, 0.4, 0.2, 0.1, 0.05];
+        const colors     = ['#800026','#BD0026','#E31A1C','#FC4E2A','#FD8D3C','#FEB24C','#FED976'];
+        const legendDiv  = document.getElementById('map-legend');
+        thresholds.forEach((t, i) => {{
+            const lo = Math.round(t * maxQsos);
+            const hi = i === 0 ? maxQsos : Math.round(thresholds[i-1] * maxQsos) - 1;
+            const label = i === 0 ? `&gt; ${{lo.toLocaleString()}}` : `${{lo.toLocaleString()}} – ${{hi.toLocaleString()}}`;
+            legendDiv.innerHTML += `<div class="map-legend-item">
+                <div class="map-legend-swatch" style="background:${{colors[i]}}"></div>
+                <span>${{label}}</span></div>`;
+        }});
+        legendDiv.innerHTML += `<div class="map-legend-item">
+            <div class="map-legend-swatch" style="background:#FED976"></div>
+            <span>1 – ${{Math.round(0.05 * maxQsos).toLocaleString()}}</span></div>`;
+        legendDiv.innerHTML += `<div class="map-legend-item">
+            <div class="map-legend-swatch" style="background:#e8e8e8"></div>
+            <span>No activity</span></div>`;
     </script>
 </body>
 </html>'''
