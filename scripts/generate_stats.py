@@ -6,6 +6,7 @@ Generate contest statistics HTML and JSON summary.
 import sqlite3
 import json
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 # NY county abbreviations — used to group county-level QSOs under state 'NY'
@@ -284,7 +285,11 @@ def format_stats_html(stats, contest_name):
         rows = ''.join(f"<li><strong>{k}:</strong> {v:,}</li>\n" for k, v in items.items())
         return f'<div class="stat-section"><h3>{title}</h3><ul>\n{rows}</ul></div>\n'
 
+    now = datetime.now().astimezone()
+    generated = now.strftime('%Y-%m-%d %H:%M ') + now.strftime('%Z')
+
     html = f'<div class="contest-stats">\n<h2>{contest_name} Statistics</h2>\n'
+    html += f'<p style="color:#666;font-size:0.85em;margin-top:-0.5em;">Generated {generated}</p>\n'
 
     html += section("Participation", {
         "Total Logs Submitted": stats['total_logs'],
