@@ -294,8 +294,8 @@ def format_stats_html(stats, contest_name):
     })
 
     html += section("QSO Activity", {
-        "Total QSOs": stats['total_qsos'],
-        "QSOs by Host-State Stations": stats['qsos_by_ny'],
+        "Total QSO Records": stats['total_qsos'],
+        "QSO Records by Host-State Stations": stats['qsos_by_ny'],
     })
 
     if stats.get('official_overlays'):
