@@ -147,8 +147,10 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY', contes
             group = 'US'
         elif state in CA_PROVINCE_NAMES:
             group = 'Canada'
-        else:
+        elif state == 'DX':
             group = 'DX'
+        else:
+            group = 'unrecognized'
         result[state] = {
             'sent':  sent.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
             'rcvd':  rcvd.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
@@ -389,9 +391,18 @@ def _grouped_state_table(state_breakdown):
       .state-table tr.group-total td { font-weight: bold; background: #dce8f7; }
     </style>"""
 
-    us_rows = _rows_for_group('US', US_STATE_NAMES)
-    ca_rows = _rows_for_group('Canada', CA_PROVINCE_NAMES)
-    dx_rows = _rows_for_group('DX', {})
+    us_rows   = _rows_for_group('US', US_STATE_NAMES)
+    ca_rows   = _rows_for_group('Canada', CA_PROVINCE_NAMES)
+    dx_rows   = _rows_for_group('DX', {})
+    unk_rows  = _rows_for_group('unrecognized', {})
+
+    unk_note = ''
+    if unk_rows:
+        codes = ', '.join(f'<b>{c}</b>' for c in sorted(unk_rows))
+        unk_note = (
+            f'<p style="color:#7b241c;font-size:0.85em;margin-top:0.5em;">'
+            f'Non-compliant exchange codes (not counted above): {codes} — see errata.</p>'
+        )
 
     html = (
         f'{css}<div class="stat-section"><h3>QSOs by State / Province / DX</h3>'
@@ -399,7 +410,8 @@ def _grouped_state_table(state_breakdown):
         f'{_section("US States", us_rows, US_STATE_NAMES)}'
         f'{_section("Canadian Provinces & Territories", ca_rows, CA_PROVINCE_NAMES)}'
         f'{_section("DX", dx_rows, {})}'
-        f'</tbody></table></div></div>'
+        f'</tbody></table></div>'
+        f'{unk_note}</div>'
     )
     return html
 
