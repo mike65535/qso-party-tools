@@ -211,7 +211,7 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
         const maxQsos = Math.max(...Object.values(countyData).map(d => d.qsos));
         const thresholds = [0.8, 0.6, 0.4, 0.2, 0.1, 0.05, 0.01];
         const colors    = ['#800026','#BD0026','#E31A1C','#FC4E2A','#FD8D3C','#FEB24C','#FED976'];
-        const legend = L.control({{ position: 'bottomright' }});
+        const legend = L.control({{ position: 'topleft' }});
         legend.onAdd = function() {{
             const div = L.DomUtil.create('div', 'map-legend');
             div.innerHTML = '<h4>QSOs per County</h4>';
