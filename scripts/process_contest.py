@@ -130,6 +130,17 @@ def main():
         '--charts-dir', charts_dir
     ], script_dir)
 
+    # Derive contest ISO timestamps (used by stats and animations)
+    schedule = config['schedule']
+    contest_start_iso = f"{schedule['date']}T{schedule['start_time'].replace('Z', '')}"
+    end_date_offset = schedule.get('end_date_offset', 0)
+    if end_date_offset:
+        from datetime import date, timedelta
+        end_date = (date.fromisoformat(schedule['date']) + timedelta(days=end_date_offset)).isoformat()
+    else:
+        end_date = schedule['date']
+    contest_end_iso = f"{end_date}T{schedule['end_time'].replace('Z', '')}"
+
     # 7. Generate contest stats
     print("\n[7/11] Generating contest statistics...")
     run('generate_stats.py', [
@@ -151,17 +162,6 @@ def main():
         '--boundaries', ny_boundaries,
         '--title', f'QSOs made from {config.get("host_state", "host")} stations'
     ], script_dir)
-
-    # Derive contest ISO timestamps for animations
-    schedule = config['schedule']
-    contest_start_iso = f"{schedule['date']}T{schedule['start_time'].replace('Z', '')}"
-    end_date_offset = schedule.get('end_date_offset', 0)
-    if end_date_offset:
-        from datetime import date, timedelta
-        end_date = (date.fromisoformat(schedule['date']) + timedelta(days=end_date_offset)).isoformat()
-    else:
-        end_date = schedule['date']
-    contest_end_iso = f"{end_date}T{schedule['end_time'].replace('Z', '')}"
 
     # 9. Generate county-level animation
     print("\n[9/11] Generating county activity animation...")
