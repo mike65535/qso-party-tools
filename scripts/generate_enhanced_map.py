@@ -98,7 +98,7 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
         }}
         .leaflet-interactive {{ outline: none !important; }}
         .leaflet-interactive:focus {{ outline: none !important; }}
-        #map-legend {{ position: absolute; top: 10px; right: 10px; z-index: 1000;
+        #map-legend {{ position: absolute; bottom: 60px; right: 10px; z-index: 1000;
                        background: white; padding: 10px 14px; border-radius: 6px;
                        box-shadow: 0 1px 5px rgba(0,0,0,0.3); line-height: 1.6;
                        font-size: 13px; min-width: 160px; }}
