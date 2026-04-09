@@ -9,6 +9,28 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+US_STATE_NAMES = {
+    'AL':'Alabama','AK':'Alaska','AZ':'Arizona','AR':'Arkansas','CA':'California',
+    'CO':'Colorado','CT':'Connecticut','DE':'Delaware','DC':'Dist. of Columbia',
+    'FL':'Florida','GA':'Georgia','ID':'Idaho','IL':'Illinois','IN':'Indiana',
+    'IA':'Iowa','KS':'Kansas','KY':'Kentucky','LA':'Louisiana','ME':'Maine',
+    'MD':'Maryland','MA':'Massachusetts','MI':'Michigan','MN':'Minnesota',
+    'MS':'Mississippi','MO':'Missouri','MT':'Montana','NE':'Nebraska','NV':'Nevada',
+    'NH':'New Hampshire','NJ':'New Jersey','NM':'New Mexico','NY':'New York',
+    'NC':'North Carolina','ND':'North Dakota','OH':'Ohio','OK':'Oklahoma',
+    'OR':'Oregon','PA':'Pennsylvania','RI':'Rhode Island','SC':'South Carolina',
+    'SD':'South Dakota','TN':'Tennessee','TX':'Texas','UT':'Utah','VT':'Vermont',
+    'VA':'Virginia','WA':'Washington','WV':'West Virginia','WI':'Wisconsin',
+    'WY':'Wyoming',
+}
+
+CA_PROVINCE_NAMES = {
+    'AB':'Alberta','BC':'British Columbia','MB':'Manitoba','NB':'New Brunswick',
+    'NL':'Newfoundland & Labrador','NS':'Nova Scotia','NT':'Northwest Territories',
+    'NU':'Nunavut','ON':'Ontario','PE':'Prince Edward Island','QC':'Quebec',
+    'SK':'Saskatchewan','YT':'Yukon',
+}
+
 # NY county abbreviations — used to group county-level QSOs under state 'NY'
 NY_COUNTIES = {
     'ALB','ALL','BRM','BRX','CAT','CAY','CHA','CHE','CGO','CLI',
@@ -121,9 +143,16 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY', contes
     all_states = sorted(set(sent) | set(rcvd))
     result = {}
     for state in all_states:
+        if state in US_STATE_NAMES:
+            group = 'US'
+        elif state in CA_PROVINCE_NAMES:
+            group = 'Canada'
+        else:
+            group = 'DX'
         result[state] = {
-            'sent': sent.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
-            'rcvd': rcvd.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
+            'sent':  sent.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
+            'rcvd':  rcvd.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
+            'group': group,
         }
     return result
 
@@ -292,6 +321,89 @@ def _mode_breakdown_table(title, rows_data, label_col, label_fn=None):
     return table_css + hdr + body + footer
 
 
+def _grouped_state_table(state_breakdown):
+    """Render state breakdown as three grouped sections: US States, Canada, DX."""
+
+    def _rows_for_group(group, name_lookup):
+        return {
+            code: data for code, data in state_breakdown.items()
+            if data['group'] == group
+        }
+
+    def _section(group_label, rows, name_lookup):
+        if not rows:
+            return ''
+        cols = (
+            '<th class="label-col">State / Province</th>'
+            '<th>CW Sent</th><th>CW Rcvd</th>'
+            '<th>PH Sent</th><th>PH Rcvd</th>'
+            '<th>DIG Sent</th><th>DIG Rcvd</th>'
+            '<th class="total">Total Sent</th><th class="total">Total Rcvd</th>'
+        )
+        body = ''
+        tot_s = {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}
+        tot_r = {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}
+        for code in sorted(rows, key=lambda c: name_lookup.get(c, c)):
+            d = rows[code]
+            s, r = d['sent'], d['rcvd']
+            name = name_lookup.get(code, code)
+            label = f"{name} ({code})" if name != code else code
+            body += (
+                f'<tr>'
+                f'<td class="label-col">{label}</td>'
+                f'<td>{s["cw"]:,}</td><td>{r["cw"]:,}</td>'
+                f'<td>{s["ph"]:,}</td><td>{r["ph"]:,}</td>'
+                f'<td>{s["dig"]:,}</td><td>{r["dig"]:,}</td>'
+                f'<td class="total">{s["total"]:,}</td>'
+                f'<td class="total">{r["total"]:,}</td>'
+                f'</tr>'
+            )
+            for k in tot_s:
+                tot_s[k] += s[k]
+                tot_r[k] += r[k]
+        footer = (
+            f'<tr class="group-total">'
+            f'<td class="label-col">{group_label} Total</td>'
+            f'<td>{tot_s["cw"]:,}</td><td>{tot_r["cw"]:,}</td>'
+            f'<td>{tot_s["ph"]:,}</td><td>{tot_r["ph"]:,}</td>'
+            f'<td>{tot_s["dig"]:,}</td><td>{tot_r["dig"]:,}</td>'
+            f'<td class="total">{tot_s["total"]:,}</td>'
+            f'<td class="total">{tot_r["total"]:,}</td>'
+            f'</tr>'
+        )
+        return (
+            f'<tr class="group-header"><th colspan="9">{group_label}</th></tr>'
+            f'<tr>{cols}</tr>'
+            f'{body}{footer}'
+        )
+
+    css = """
+    <style>
+      .state-table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.9em; }
+      .state-table th, .state-table td { border: 1px solid #ccc; padding: 4px 8px; text-align: right; }
+      .state-table th.label-col, .state-table td.label-col { text-align: left; }
+      .state-table tr:nth-child(even) { background: #f5f5f5; }
+      .state-table td.total { font-weight: bold; background: #eaf0fb; }
+      .state-table tr.group-header th { background: #2c3e50; color: white; text-align: left;
+                                        font-size: 1em; padding: 6px 8px; }
+      .state-table tr.group-total td { font-weight: bold; background: #dce8f7; }
+    </style>"""
+
+    us_rows = _rows_for_group('US', US_STATE_NAMES)
+    ca_rows = _rows_for_group('Canada', CA_PROVINCE_NAMES)
+    dx_rows = _rows_for_group('DX', {})
+
+    html = (
+        f'{css}<div class="stat-section"><h3>QSOs by State / Province / DX</h3>'
+        f'<div style="overflow-x:auto"><table class="state-table"><tbody>'
+        f'{_section("US States", us_rows, US_STATE_NAMES)}'
+        f'{_section("Canadian Provinces & Territories", ca_rows, CA_PROVINCE_NAMES)}'
+        f'{_section("DX", dx_rows, {})}'
+        f'</tbody></table></div></div>'
+    )
+    return html
+
+
 def format_stats_html(stats, contest_name):
     """Format stats as an HTML fragment."""
 
@@ -338,10 +450,7 @@ def format_stats_html(stats, contest_name):
         )
 
     if stats.get('state_breakdown'):
-        html += _mode_breakdown_table(
-            "QSOs by State / Province", stats['state_breakdown'],
-            label_col="State"
-        )
+        html += _grouped_state_table(stats['state_breakdown'])
 
     if stats.get('filtered_qsos') is not None:
         html += _filtered_qsos_table(stats['filtered_qsos'])
