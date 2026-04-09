@@ -136,7 +136,9 @@ def main():
         '--meta-db', meta_db,
         '--qso-db', qso_db,
         '--output-dir', html_dir,
-        '--contest-name', contest_name
+        '--contest-name', contest_name,
+        '--contest-start', contest_start_iso,
+        '--contest-end', contest_end_iso,
     ], script_dir)
 
     # 8. Generate enhanced map

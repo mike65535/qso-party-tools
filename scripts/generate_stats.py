@@ -49,24 +49,25 @@ def _mode_case(col):
     )
 
 
-def generate_county_breakdown(qso_db, host_counties=None):
+def generate_county_breakdown(qso_db, host_counties=None, contest_start=None, contest_end=None):
     """Return per-county sent/received counts by mode for host-state counties."""
     counties = host_counties or NY_COUNTIES
     placeholders = ','.join(f"'{c}'" for c in counties)
+    win = f"AND datetime >= '{contest_start}' AND datetime <= '{contest_end}'" if contest_start else ""
 
     conn = sqlite3.connect(qso_db)
     sent_sql = f"""
         SELECT tx_county,
             {_mode_case('mode')},
             COUNT(*)
-        FROM valid_qsos WHERE tx_county IN ({placeholders})
+        FROM valid_qsos WHERE tx_county IN ({placeholders}) {win}
         GROUP BY tx_county
     """
     rcvd_sql = f"""
         SELECT rx_county,
             {_mode_case('mode')},
             COUNT(*)
-        FROM valid_qsos WHERE rx_county IN ({placeholders})
+        FROM valid_qsos WHERE rx_county IN ({placeholders}) {win}
         GROUP BY rx_county
     """
 
@@ -85,10 +86,11 @@ def generate_county_breakdown(qso_db, host_counties=None):
     return result
 
 
-def generate_state_breakdown(qso_db, host_counties=None, host_state='NY'):
+def generate_state_breakdown(qso_db, host_counties=None, host_state='NY', contest_start=None, contest_end=None):
     """Return per-state sent/received counts by mode."""
     counties = host_counties or NY_COUNTIES
     placeholders = ','.join(f"'{c}'" for c in counties)
+    win = f"AND datetime >= '{contest_start}' AND datetime <= '{contest_end}'" if contest_start else ""
 
     conn = sqlite3.connect(qso_db)
     sent_sql = f"""
@@ -97,7 +99,7 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY'):
                  ELSE UPPER(tx_county) END as state,
             {_mode_case('mode')},
             COUNT(*)
-        FROM valid_qsos WHERE tx_county IS NOT NULL AND tx_county != ''
+        FROM valid_qsos WHERE tx_county IS NOT NULL AND tx_county != '' {win}
         GROUP BY state
     """
     rcvd_sql = f"""
@@ -106,7 +108,7 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY'):
                  ELSE UPPER(rx_county) END as state,
             {_mode_case('mode')},
             COUNT(*)
-        FROM valid_qsos WHERE rx_county IS NOT NULL AND rx_county != ''
+        FROM valid_qsos WHERE rx_county IS NOT NULL AND rx_county != '' {win}
         GROUP BY state
     """
 
@@ -126,7 +128,7 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY'):
     return result
 
 
-def generate_contest_stats(meta_db, qso_db):
+def generate_contest_stats(meta_db, qso_db, contest_start, contest_end):
     """Generate summary statistics from the databases."""
     stats = {}
     meta_conn = sqlite3.connect(meta_db)
@@ -171,31 +173,40 @@ def generate_contest_stats(meta_db, qso_db):
     ny_callsigns = [row[0] for row in meta_conn.execute("SELECT callsign FROM stations WHERE location = 'NY'")]
     meta_conn.close()
 
+    start_db = contest_start.replace('T', ' ')
+    end_db   = contest_end.replace('T', ' ')
+
     qso_conn = sqlite3.connect(qso_db)
-    stats['total_qsos'] = qso_conn.execute("SELECT COUNT(*) FROM valid_qsos").fetchone()[0]
+    stats['total_qsos'] = qso_conn.execute(
+        "SELECT COUNT(*) FROM valid_qsos WHERE datetime >= ? AND datetime <= ?",
+        (start_db, end_db)
+    ).fetchone()[0]
     if ny_callsigns:
         placeholders = ','.join('?' * len(ny_callsigns))
         stats['qsos_by_ny'] = qso_conn.execute(
-            f"SELECT COUNT(*) FROM valid_qsos WHERE station_call IN ({placeholders})", ny_callsigns
+            f"SELECT COUNT(*) FROM valid_qsos WHERE datetime >= ? AND datetime <= ? "
+            f"AND station_call IN ({placeholders})",
+            (start_db, end_db, *ny_callsigns)
         ).fetchone()[0]
     else:
         stats['qsos_by_ny'] = 0
 
-    # Filtered QSOs for audit
+    # Filtered QSOs for audit — structural failures + out-of-window
     rows = qso_conn.execute("""
         SELECT id, log_file, station_call, datetime, freq, mode,
                tx_call, tx_county, rx_call, rx_county
         FROM qsos
         WHERE id NOT IN (SELECT id FROM valid_qsos)
+           OR datetime < ? OR datetime > ?
         ORDER BY log_file, datetime
-    """).fetchall()
+    """, (start_db, end_db)).fetchall()
     stats['filtered_qsos'] = [
         {
             'id': r[0], 'log_file': r[1], 'station_call': r[2],
             'datetime': r[3], 'freq': r[4], 'mode': r[5],
             'tx_call': r[6], 'tx_county': r[7],
             'rx_call': r[8], 'rx_county': r[9],
-            'reason': _filter_reason(r[7], r[9]),
+            'reason': _filter_reason(r[7], r[9], r[3], start_db, end_db),
         }
         for r in rows
     ]
@@ -204,9 +215,12 @@ def generate_contest_stats(meta_db, qso_db):
     return stats
 
 
-def _filter_reason(tx_county, rx_county):
-    """Human-readable reason why a QSO was excluded from valid_qsos."""
+def _filter_reason(tx_county, rx_county, dt_str=None, start_db=None, end_db=None):
+    """Human-readable reason why a QSO was excluded."""
     reasons = []
+    if dt_str and start_db and end_db:
+        if dt_str < start_db or dt_str > end_db:
+            reasons.append(f"outside contest window ({dt_str.strip()} not in {start_db}–{end_db})")
     for label, val in [('tx_county', tx_county or ''), ('rx_county', rx_county or '')]:
         if '/' in val:
             reasons.append(f"{label} is county-line slash format ({val!r})")
@@ -390,14 +404,19 @@ def main():
     parser.add_argument('--qso-db', required=True, help='Path to contest_qsos.db')
     parser.add_argument('--output-dir', required=True, help='Directory for output files')
     parser.add_argument('--contest-name', required=True, help='Contest display name (e.g. "2025 New York QSO Party")')
+    parser.add_argument('--contest-start', required=True, help='Contest start UTC (e.g. "2025-10-18T14:00:00")')
+    parser.add_argument('--contest-end',   required=True, help='Contest end UTC (e.g. "2025-10-19T02:00:00")')
     args = parser.parse_args()
+
+    contest_start = args.contest_start.replace('T', ' ')
+    contest_end   = args.contest_end.replace('T', ' ')
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    stats = generate_contest_stats(args.meta_db, args.qso_db)
-    stats['county_breakdown'] = generate_county_breakdown(args.qso_db)
-    stats['state_breakdown'] = generate_state_breakdown(args.qso_db)
+    stats = generate_contest_stats(args.meta_db, args.qso_db, contest_start, contest_end)
+    stats['county_breakdown'] = generate_county_breakdown(args.qso_db, contest_start=contest_start, contest_end=contest_end)
+    stats['state_breakdown']  = generate_state_breakdown(args.qso_db, contest_start=contest_start, contest_end=contest_end)
 
     json_path = output_dir / 'contest_stats.json'
     with open(json_path, 'w') as f:
