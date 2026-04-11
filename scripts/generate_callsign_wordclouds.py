@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Generate three callsign word clouds (NY mobile, NY fixed, out-of-state)
-and an HTML page displaying them together.
+Generate four callsign word clouds (NY mobile, NY fixed, out-of-state, DX)
+and an HTML page displaying them in a 2x2 grid.
 """
 
 import argparse
@@ -10,26 +10,26 @@ import sqlite3
 from pathlib import Path
 
 from wordcloud import WordCloud
-import matplotlib.pyplot as plt
 
 
-# Color palettes per cloud
+MAX_WORDS = 15
+
 COLORS = {
-    'mobile': '#d73027',   # red  — mobiles stand out
-    'fixed':  '#1a6eb5',   # blue — NY fixed
+    'mobile': '#d73027',   # red   — NY mobiles
+    'fixed':  '#1a6eb5',   # blue  — NY fixed
     'out':    '#2ca25f',   # green — out of state
+    'dx':     '#8856a7',   # purple — DX
 }
 
 
 def _single_color_fn(color):
-    """Return a wordcloud color_func that always uses the given hex color."""
     def fn(word, font_size, position, orientation, random_state=None, **kwargs):
         return color
     return fn
 
 
 def fetch_frequency_maps(meta_db, qso_db):
-    """Return three {callsign: qso_count} dicts."""
+    """Return four {callsign: qso_count} dicts: NY mobile, NY fixed, out-of-state, DX."""
     meta_conn = sqlite3.connect(meta_db)
     stations = {r[0]: (r[1], r[2]) for r in meta_conn.execute(
         "SELECT callsign, location, station_type FROM stations"
@@ -42,7 +42,7 @@ def fetch_frequency_maps(meta_db, qso_db):
     ).fetchall()}
     qso_conn.close()
 
-    ny_mobile, ny_fixed, out_of_state = {}, {}, {}
+    ny_mobile, ny_fixed, out_of_state, dx = {}, {}, {}, {}
     for call, n in counts.items():
         loc, stype = stations.get(call, (None, None))
         if loc == 'NY':
@@ -50,30 +50,35 @@ def fetch_frequency_maps(meta_db, qso_db):
                 ny_mobile[call] = n
             else:
                 ny_fixed[call] = n
+        elif loc == 'DX':
+            dx[call] = n
         else:
             out_of_state[call] = n
 
-    return ny_mobile, ny_fixed, out_of_state
+    return ny_mobile, ny_fixed, out_of_state, dx
 
 
 def make_wordcloud(freq, color, output_path, width=800, height=500):
     if not freq:
         print(f"  No data — skipping {output_path.name}")
         return False
+    # Keep only top MAX_WORDS by frequency
+    top = dict(sorted(freq.items(), key=lambda x: x[1], reverse=True)[:MAX_WORDS])
     wc = WordCloud(
         width=width, height=height,
         background_color='white',
         color_func=_single_color_fn(color),
         prefer_horizontal=0.85,
-        min_font_size=10,
-        max_words=200,
-    ).generate_from_frequencies(freq)
+        min_font_size=12,
+        max_words=MAX_WORDS,
+    ).generate_from_frequencies(top)
     wc.to_file(str(output_path))
-    print(f"  Saved {output_path.name}")
+    print(f"  Saved {output_path.name} ({len(top)} callsigns)")
     return True
 
 
-def generate_html(mobile_png, fixed_png, out_png, html_path, contest_name, charts_rel):
+def generate_html(clouds, html_path, contest_name):
+    """clouds: list of (png_path, title) tuples."""
     def img_tag(png_path, title):
         rel = Path(os.path.relpath(png_path, html_path.parent))
         return f'''
@@ -82,13 +87,7 @@ def generate_html(mobile_png, fixed_png, out_png, html_path, contest_name, chart
             <img src="{rel}" alt="{title}" onclick="window.open('{rel}', '_blank')">
         </div>'''
 
-    items = ''
-    if mobile_png.exists():
-        items += img_tag(mobile_png, 'NY Mobile Stations')
-    if fixed_png.exists():
-        items += img_tag(fixed_png, 'NY Fixed Stations')
-    if out_png.exists():
-        items += img_tag(out_png, 'Out-of-State Stations')
+    items = ''.join(img_tag(p, t) for p, t in clouds if p.exists())
 
     html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -102,7 +101,7 @@ def generate_html(mobile_png, fixed_png, out_png, html_path, contest_name, chart
         p.sub {{ text-align: center; color: #666; font-size: 0.9em; margin-top: -0.5em; }}
         .cloud-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            grid-template-columns: 1fr 1fr;
             gap: 24px;
             max-width: 1400px;
             margin: 1.5em auto;
@@ -135,7 +134,7 @@ def generate_html(mobile_png, fixed_png, out_png, html_path, contest_name, chart
 </head>
 <body>
     <h1>{contest_name} — Callsign Word Clouds</h1>
-    <p class="sub">Callsign size reflects total QSOs logged. Click any image to open full size.</p>
+    <p class="sub">Top {MAX_WORDS} callsigns per group, sized by QSO count. Click any image to open full size.</p>
     <div class="cloud-grid">{items}
     </div>
 </body>
@@ -144,7 +143,7 @@ def generate_html(mobile_png, fixed_png, out_png, html_path, contest_name, chart
     html_path.parent.mkdir(parents=True, exist_ok=True)
     with open(html_path, 'w') as f:
         f.write(html)
-    print(f"  Gallery saved to {html_path}")
+    print(f"  HTML saved to {html_path}")
 
 
 def main():
@@ -157,27 +156,34 @@ def main():
     parser.add_argument('--contest-id',   required=True)
     args = parser.parse_args()
 
-    out_dir  = Path(args.output_dir)
+    out_dir   = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     html_path = Path(args.output_html)
-    cid = args.contest_id
+    cid       = args.contest_id
 
     print("Fetching QSO counts...")
-    ny_mobile, ny_fixed, out_of_state = fetch_frequency_maps(args.meta_db, args.qso_db)
-    print(f"  NY mobile: {len(ny_mobile)} stations, NY fixed: {len(ny_fixed)}, Out-of-state: {len(out_of_state)}")
+    ny_mobile, ny_fixed, out_of_state, dx = fetch_frequency_maps(args.meta_db, args.qso_db)
+    print(f"  NY mobile: {len(ny_mobile)}, NY fixed: {len(ny_fixed)}, "
+          f"Out-of-state: {len(out_of_state)}, DX: {len(dx)}")
 
     mobile_png = out_dir / f'{cid}_wordcloud_ny_mobile.png'
     fixed_png  = out_dir / f'{cid}_wordcloud_ny_fixed.png'
     out_png    = out_dir / f'{cid}_wordcloud_out_of_state.png'
+    dx_png     = out_dir / f'{cid}_wordcloud_dx.png'
 
     print("Generating word clouds...")
     make_wordcloud(ny_mobile,    COLORS['mobile'], mobile_png)
     make_wordcloud(ny_fixed,     COLORS['fixed'],  fixed_png)
     make_wordcloud(out_of_state, COLORS['out'],    out_png)
+    make_wordcloud(dx,           COLORS['dx'],     dx_png)
 
     print("Generating HTML...")
-    generate_html(mobile_png, fixed_png, out_png, html_path, args.contest_name,
-                  out_dir.relative_to(html_path.parent) if False else out_dir)
+    generate_html([
+        (mobile_png, 'NY Mobile Stations'),
+        (fixed_png,  'NY Fixed Stations'),
+        (out_png,    'Out-of-State Stations'),
+        (dx_png,     'DX Stations'),
+    ], html_path, args.contest_name)
     print("Done!")
 
 
