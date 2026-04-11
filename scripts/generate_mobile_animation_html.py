@@ -41,9 +41,17 @@ DEFAULT_ICONS = {
 }
 
 
+MOBILE_ABOUT = (
+    "This animation shows mobile station movement and activity across NY counties during the contest. "
+    "Mobile stations are automatically detected by identifying stations that logged QSOs from multiple NY counties. "
+    "Markers show each mobile's estimated position based on their logged county sequence; "
+    "stations operating on a county line are shown midway between those two counties. "
+    "County shading reflects cumulative mobile QSOs in that county, using the same color scale throughout."
+)
+
 def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                                boundaries_file, output_file,
-                               contest_start, contest_end, title):
+                               contest_start, contest_end, title, about_text=MOBILE_ABOUT):
     with open(boundaries_file, 'r') as f:
         boundaries_data = json.load(f)
 
@@ -103,11 +111,13 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
         <div class="legend-item"><div class="legend-color" style="background:#e8e8e8;"></div><span>0</span></div>
     </div>
 
+    <div id="aboutPanel" class="about-panel">{about_text}<button class="about-close" onclick="toggleAbout()">✕</button></div>
     <div class="controls">
         <div class="top-controls">
             <button class="control-btn" id="playBtn" onclick="togglePlay()">▶ Play</button>
             <button class="control-btn" onclick="resetAnimation()">⏮ Reset</button>
-            <button class="control-btn" id="speedBtn" onclick="cycleSpeed()">Speed 5x</button>
+            <button class="control-btn" id="speedBtn" onclick="cycleSpeed()">Speed 1x</button>
+            <button class="control-btn" onclick="toggleAbout()">ℹ About</button>
         </div>
         <div class="middle-row">
             <div class="time-info">
@@ -135,12 +145,14 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
         let currentTime = new Date('{contest_start}Z');
         const startTime = new Date('{contest_start}Z');
         const endTime = new Date('{contest_end}Z');
+        const firstHourEnd = new Date(startTime.getTime() + 60 * 60 * 1000);
         const countyCoords = {{}};
         let countyLayer;
 
-        const speedMultipliers = [5, 25, 50, 250];
+        const speedMultipliers = [1, 2, 5, 10, 20, 50];
         let speedIdx = 0;
         let speedMultiplier = speedMultipliers[speedIdx];
+
 
         function getCountyAbbrev(fullName) {{
             for (const [abbrev, name] of Object.entries(countyNames)) {{
@@ -175,7 +187,7 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                 {{ color: '#cc0000', label: `${{Math.ceil(maxQSOs*0.8)+1}}-${{maxQSOs}}` }},
             ];
             legend.innerHTML = '<div style="font-weight:bold;margin-bottom:5px;">Mobile QSOs</div>' +
-                ranges.map(r => `<div class="legend-item"><div class="legend-color" style="background:${{r.color}};"></div><span>${{r.label}}</span></div>`).join('');
+                [...ranges].reverse().map(r => `<div class="legend-item"><div class="legend-color" style="background:${{r.color}};"></div><span>${{r.label}}</span></div>`).join('');
         }}
 
         function getStationCoords(callsign, time) {{
@@ -218,7 +230,7 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
         }}
 
         function initMap() {{
-            map = L.map('map').setView([43.0, -76.0], 7);
+            map = L.map('map', {{ zoomDelta: 0.25, zoomSnap: 0.25 }}).setView([43.0, -76.0], 7);
 
             const allFeatures = boundariesData.features;
             let merged = allFeatures[0];
@@ -226,9 +238,6 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                 try {{ merged = turf.union(merged, allFeatures[i]); }}
                 catch(e) {{ console.log('Union failed', i); }}
             }}
-
-            L.tileLayer('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
-                {{ attribution: '' }}).addTo(map);
 
             countyLayer = L.geoJSON(boundariesData, {{
                 style: () => ({{ fillColor: '#e8e8e8', weight: 0.5, opacity: 0.8, color: '#666', fillOpacity: 0.7 }}),
@@ -256,8 +265,8 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
 
             boundariesData.features.forEach(feature => {{
                 const name = feature.properties.NAME;
-                const bbox = turf.bbox(feature);
-                countyCoords[name + " County"] = [(bbox[1]+bbox[3])/2, (bbox[0]+bbox[2])/2];
+                const pt = turf.centerOfMass(feature);
+                countyCoords[name + " County"] = [pt.geometry.coordinates[1], pt.geometry.coordinates[0]];
             }});
 
             // Create mobile markers
@@ -305,7 +314,16 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                     const qsoCount = qsos.filter(q => new Date(q.timestamp+'Z') < currentTime).length;
                     marker.getPopup().setContent(`<b>${{call}}</b><br>County: ${{countyDisplay}}<br>QSOs: ${{qsoCount}}`);
                 }} else {{
-                    marker.setOpacity(0);
+                    // No QSO yet — show first-hour starters at their starting position
+                    // until their first QSO arrives; late starters stay hidden until then
+                    const firstQsoTime = qsos.length > 0 ? new Date(qsos[0].timestamp + 'Z') : null;
+                    if (firstQsoTime && firstQsoTime <= firstHourEnd) {{
+                        marker.setLatLng(getStationCoords(call, startTime));
+                        marker.setOpacity(1);
+                        marker.getPopup().setContent(`<b>${{call}}</b><br>Starting county: ${{qsos[0].county}}<br>Ready to go!`);
+                    }} else {{
+                        marker.setOpacity(0);
+                    }}
                 }}
             }}
 
@@ -338,6 +356,7 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                 document.getElementById('playBtn').textContent = '▶ Play';
                 isPlaying = false;
             }} else {{
+                if (currentTime >= endTime) currentTime = new Date(startTime);
                 animationInterval = setInterval(() => {{
                     currentTime = new Date(currentTime.getTime() + 60000);
                     if (currentTime > endTime) {{ currentTime = endTime; togglePlay(); }}
@@ -351,7 +370,6 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
         function resetAnimation() {{
             if (isPlaying) togglePlay();
             currentTime = new Date('{contest_start}Z');
-            Object.values(mobileMarkers).forEach(m => m.setOpacity(0));
             updateDisplay();
         }}
 
@@ -367,6 +385,14 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
             const pct = (event.clientX - rect.left) / rect.width;
             currentTime = new Date(startTime.getTime() + pct * (endTime - startTime));
             updateDisplay();
+        }}
+
+        function toggleAbout() {{
+            const panel = document.getElementById('aboutPanel');
+            if (!panel) return;
+            const controls = document.querySelector('.controls');
+            if (controls) panel.style.bottom = controls.offsetHeight + 'px';
+            panel.classList.toggle('visible');
         }}
 
         document.addEventListener('DOMContentLoaded', initMap);
@@ -391,12 +417,13 @@ def main():
     parser.add_argument('--contest-end', required=True,
                         help='Contest end UTC (e.g. "2025-10-19T02:00:00")')
     parser.add_argument('--title', default='Mobile Station Activity Animation')
+    parser.add_argument('--about', default=MOBILE_ABOUT, help='About panel text')
     args = parser.parse_args()
 
     generate_mobile_animation(
         args.db, args.mobiles, args.county_line_periods,
         args.boundaries, args.output,
-        args.contest_start, args.contest_end, args.title
+        args.contest_start, args.contest_end, args.title, args.about
     )
 
 

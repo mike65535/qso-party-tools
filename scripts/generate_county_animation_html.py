@@ -15,7 +15,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from lib.animation_controls import get_controls_html, get_controls_css, get_controls_js
 from lib.animation_legend import get_legend_html, get_legend_css, get_legend_js
 
-ANIMATION_SPEEDS = [1, 5, 10, 50]
+ANIMATION_SPEEDS = [1, 2, 5, 10, 20, 50]
 COLOR_THRESHOLDS = [0, 0.05, 0.15, 0.35, 0.65]
 COLOR_PALETTE = ['#f0f0f0', '#d4c5a9', '#f4e4a6', '#f7b32b', '#d73027', '#a50f15']
 
@@ -39,7 +39,15 @@ NY_COUNTY_NAMES = {
 }
 
 
-def generate_county_animation(qso_db, boundaries_file, output_file, contest_start, contest_end, title):
+COUNTY_ABOUT = (
+    "This animation shows cumulative QSO activity by NY county over the contest period. "
+    "Each county is colored by the number of QSOs logged by stations operating from that county. "
+    "Only QSOs within the official contest window are counted; structural errors (e.g. slash-county entries) are excluded. "
+    "Counties where no station submitted a log do not appear, even if they were worked by others. "
+    "The color scale is relative to the current frame maximum and adjusts as the contest progresses."
+)
+
+def generate_county_animation(qso_db, boundaries_file, output_file, contest_start, contest_end, title, about_text=COUNTY_ABOUT):
     with open(boundaries_file, 'r') as f:
         boundaries_data = json.load(f)
 
@@ -74,7 +82,7 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
 </head>
 <body>
     <div id="map"></div>
-    {get_controls_html()}
+    {get_controls_html(about_text)}
     {get_legend_html()}
     <script>
         const countyNames = {json.dumps(NY_COUNTY_NAMES, indent=8)};
@@ -96,6 +104,7 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
                 document.getElementById('playBtn').textContent = '▶ Play';
                 isPlaying = false;
             }} else {{
+                if (currentTime >= endTime) currentTime = new Date(startTime);
                 animationInterval = setInterval(() => {{
                     currentTime = new Date(currentTime.getTime() + 60000);
                     if (currentTime > endTime) {{ currentTime = endTime; playPause(); }}
@@ -135,7 +144,7 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
         }}
 
         function initMap() {{
-            map = L.map('map').setView([43.0, -76.0], 7);
+            map = L.map('map', {{ zoomDelta: 0.25, zoomSnap: 0.25 }}).setView([43.0, -76.0], 7);
 
             const allFeatures = boundariesData.features;
             let merged = allFeatures[0];
@@ -144,8 +153,6 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
                 catch(e) {{ console.log('Union failed', i); }}
             }}
 
-            L.tileLayer('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
-                {{ attribution: '' }}).addTo(map);
 
             countyLayer = L.geoJSON(boundariesData, {{
                 style: () => ({{ fillColor: '#e8e8e8', weight: 0.5, opacity: 0.8, color: '#666', fillOpacity: 1.0 }}),
@@ -175,8 +182,8 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
 
             boundariesData.features.forEach(feature => {{
                 const name = feature.properties.NAME;
-                const bbox = turf.bbox(feature);
-                countyCoords[name + " County"] = [(bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2];
+                const pt = turf.centerOfMass(feature);
+                countyCoords[name + " County"] = [pt.geometry.coordinates[1], pt.geometry.coordinates[0]];
             }});
 
             updateDisplay();
@@ -230,6 +237,14 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
                 `{title} | QSOs: ${{totalQSOs}} | Active Counties: ${{activeCounties}}`;
         }}
 
+        function toggleAbout() {{
+            const panel = document.getElementById('aboutPanel');
+            if (!panel) return;
+            const controls = document.querySelector('.controls');
+            if (controls) panel.style.bottom = controls.offsetHeight + 'px';
+            panel.classList.toggle('visible');
+        }}
+
         document.addEventListener('DOMContentLoaded', initMap);
     </script>
 </body></html>'''
@@ -251,11 +266,12 @@ def main():
     parser.add_argument('--contest-end', required=True,
                         help='Contest end datetime UTC (e.g. "2025-10-19T02:00:00")')
     parser.add_argument('--title', default='County QSO Activity Animation')
+    parser.add_argument('--about', default=COUNTY_ABOUT, help='About panel text')
     args = parser.parse_args()
 
     generate_county_animation(
         args.db, args.boundaries, args.output,
-        args.contest_start, args.contest_end, args.title
+        args.contest_start, args.contest_end, args.title, args.about
     )
 
 

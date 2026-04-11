@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
-# Default NY county abbreviations — used to map tx_county to state code 'NY'
+# Default NY county abbreviations — used to map rx_county host-county values to state code 'NY'
 DEFAULT_HOST_COUNTIES = {
     'ALB', 'ALL', 'BRM', 'BRX', 'CAT', 'CAY', 'CHA', 'CHE', 'CGO', 'CLI',
     'COL', 'COR', 'DEL', 'DUT', 'ERI', 'ESS', 'FRA', 'FUL', 'GEN', 'GRE',
@@ -36,12 +36,13 @@ def generate_state_animation_data(qso_db, output_file, contest_start_str,
     conn = sqlite3.connect(qso_db)
     cursor = conn.cursor()
 
-    # Build SQL CASE clause to map host counties -> host state
+    # Use rx_county (worked QTH) so states appear even if they didn't submit logs.
+    # e.g. RI stations worked by NY but who submitted no logs still light up on the map.
     county_list = "','".join(sorted(host_counties_upper))
     query = f"""
-    SELECT datetime, station_call, tx_county,
-        CASE WHEN UPPER(tx_county) IN ('{county_list}') THEN '{host_state}'
-             ELSE UPPER(tx_county)
+    SELECT datetime, station_call, rx_county,
+        CASE WHEN UPPER(rx_county) IN ('{county_list}') THEN '{host_state}'
+             ELSE UPPER(rx_county)
         END as state
     FROM valid_qsos
     WHERE datetime >= ? AND datetime <= ?
@@ -56,7 +57,7 @@ def generate_state_animation_data(qso_db, output_file, contest_start_str,
 
     # Bin into 1-minute intervals
     state_data = {}
-    for qso_time_str, station, county, state in qsos:
+    for qso_time_str, station, rx_qth, state in qsos:
         qso_time = datetime.strptime(qso_time_str, '%Y-%m-%d %H:%M:%S')
         minutes_elapsed = int((qso_time - start_time).total_seconds() / 60)
         interval_time = start_time + timedelta(minutes=minutes_elapsed)

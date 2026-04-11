@@ -140,20 +140,27 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY', contes
             for r in conn.execute(rcvd_sql)}
     conn.close()
 
-    all_states = sorted(set(sent) | set(rcvd))
+    zero = {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}
+
+    # Seed with every known US state and Canadian province/territory so that
+    # locations with 0 QSOs still get a row in the output.
+    all_states = (
+        {s: 'US'     for s in US_STATE_NAMES} |
+        {s: 'Canada' for s in CA_PROVINCE_NAMES}
+    )
+    # Add any codes that appeared in the DB but aren't in the known sets
+    for s in set(sent) | set(rcvd):
+        if s not in all_states:
+            if s == 'DX':
+                all_states[s] = 'DX'
+            else:
+                all_states[s] = 'unrecognized'
+
     result = {}
-    for state in all_states:
-        if state in US_STATE_NAMES:
-            group = 'US'
-        elif state in CA_PROVINCE_NAMES:
-            group = 'Canada'
-        elif state == 'DX':
-            group = 'DX'
-        else:
-            group = 'unrecognized'
+    for state, group in all_states.items():
         result[state] = {
-            'sent':  sent.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
-            'rcvd':  rcvd.get(state, {'cw': 0, 'ph': 0, 'dig': 0, 'total': 0}),
+            'sent':  sent.get(state, zero.copy()),
+            'rcvd':  rcvd.get(state, zero.copy()),
             'group': group,
         }
     return result
@@ -464,9 +471,6 @@ def format_stats_html(stats, contest_name):
     if stats.get('state_breakdown'):
         html += _grouped_state_table(stats['state_breakdown'])
 
-    if stats.get('filtered_qsos') is not None:
-        html += _filtered_qsos_table(stats['filtered_qsos'])
-
     html += '</div>'
     return html
 
@@ -519,6 +523,167 @@ def _filtered_qsos_table(filtered_qsos):
     return css + hdr + body + '</tbody></table></div>\n'
 
 
+def build_mobile_discrepancies(meta_db, qso_db, mobiles_json, min_counties=2, min_qsos=10):
+    """Return list of stations that declared MOBILE but didn't qualify for the animation map."""
+    import sqlite3 as _sq
+    map_calls = set()
+    if mobiles_json and Path(mobiles_json).exists():
+        with open(mobiles_json) as f:
+            map_calls = set(json.load(f).keys())
+
+    meta_conn = _sq.connect(meta_db)
+    declared = {r[0]: r[1] for r in meta_conn.execute(
+        "SELECT callsign, location FROM stations WHERE station_type = 'MOBILE'"
+    ).fetchall()}
+    meta_conn.close()
+
+    qso_conn = _sq.connect(qso_db)
+    discrepancies = []
+    for call, location in sorted(declared.items()):
+        if call in map_calls:
+            continue
+        rows = qso_conn.execute(
+            "SELECT DISTINCT tx_county FROM valid_qsos WHERE station_call=?", (call,)
+        ).fetchall()
+        counties = [r[0] for r in rows]
+        n_qsos = qso_conn.execute(
+            "SELECT COUNT(*) FROM valid_qsos WHERE station_call=?", (call,)
+        ).fetchone()[0]
+        reasons = []
+        if location and location not in ('NY',):
+            reasons.append(f"non-NY location ({location})")
+        if len(counties) < min_counties:
+            reasons.append(f"only {len(counties)} county — below min {min_counties}")
+        if n_qsos < min_qsos:
+            reasons.append(f"only {n_qsos} QSOs — below min {min_qsos}")
+        if not reasons:
+            reasons.append("unknown — not detected by mobile detector")
+        discrepancies.append({
+            'callsign': call,
+            'location': location or '—',
+            'counties': ', '.join(counties) if counties else '—',
+            'n_qsos': n_qsos,
+            'reason': '; '.join(reasons),
+        })
+    qso_conn.close()
+    return discrepancies
+
+
+def format_errata_html(filtered_qsos, normalizations, mobile_discrepancies, contest_name):
+    """Render a standalone errata HTML page."""
+    now = datetime.now().astimezone()
+    generated = now.strftime('%Y-%m-%d %H:%M ') + now.strftime('%Z')
+
+    page_css = """
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2em; color: #222; }
+      h1 { color: #2c3e50; }
+      h2 { color: #7b241c; margin-top: 2em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
+      p.meta { color: #666; font-size: 0.85em; margin-top: -0.5em; }
+      .norm-table, .audit-table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.85em; }
+      .norm-table th, .audit-table th { background: #2c3e50; color: white; padding: 4px 8px; text-align: left; }
+      .norm-table td, .audit-table td { border: 1px solid #ccc; padding: 3px 7px; vertical-align: top; }
+      .norm-table tr:nth-child(even), .audit-table tr:nth-child(even) { background: #f5f5f5; }
+      .audit-table td.reason { color: #7b241c; font-style: italic; }
+    </style>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>{contest_name} — Errata</title>
+{page_css}
+</head><body>
+<h1>{contest_name} — Errata</h1>
+<p class="meta">Generated {generated}</p>
+<p>This page documents automated processing decisions applied to submitted logs.
+No QSO data was manually altered; entries below reflect structural normalization
+and validation rules applied uniformly to all logs.</p>
+"""
+
+    # ── Callsign normalizations ───────────────────────────────────────────────
+    html += f'<h2>Callsign Normalizations ({len(normalizations)})</h2>\n'
+    if normalizations:
+        html += (
+            '<p>The following log headers contained portable/mobile suffixes '
+            '(e.g. <code>/M</code>, <code>/P</code>, <code>/1</code>). '
+            'The suffix was stripped for all comparisons and tallies.</p>'
+            '<table class="norm-table"><thead><tr>'
+            '<th>Log File</th><th>Original Callsign</th><th>Normalized To</th><th>Reason</th>'
+            '</tr></thead><tbody>'
+        )
+        for n in sorted(normalizations, key=lambda x: x['log_file']):
+            html += (
+                f'<tr><td>{n["log_file"]}</td>'
+                f'<td><b>{n["original"]}</b></td>'
+                f'<td><b>{n["normalized"]}</b></td>'
+                f'<td>{n["reason"]}</td></tr>'
+            )
+        html += '</tbody></table>\n'
+    else:
+        html += '<p>None — all log header callsigns were already in standard form.</p>\n'
+
+    # ── Mobile discrepancies ──────────────────────────────────────────────────
+    html += f'<h2>Declared Mobile — Not Shown on Animation Map ({len(mobile_discrepancies)})</h2>\n'
+    if mobile_discrepancies:
+        html += (
+            '<p>These stations declared <code>CATEGORY-STATION: MOBILE</code> in their log header '
+            'but did not qualify for the mobile animation map. Qualification requires operating '
+            f'from at least {2} NY counties with at least {10} total QSOs.</p>'
+            '<table class="norm-table"><thead><tr>'
+            '<th>Callsign</th><th>Location</th><th>Counties Operated</th><th>QSOs</th><th>Reason</th>'
+            '</tr></thead><tbody>'
+        )
+        for d in mobile_discrepancies:
+            html += (
+                f'<tr><td><b>{d["callsign"]}</b></td>'
+                f'<td>{d["location"]}</td>'
+                f'<td>{d["counties"]}</td>'
+                f'<td>{d["n_qsos"]}</td>'
+                f'<td class="reason">{d["reason"]}</td></tr>'
+            )
+        html += '</tbody></table>\n'
+    else:
+        html += '<p>None — all declared mobile stations met the animation map criteria.</p>\n'
+
+    # ── Excluded QSOs ─────────────────────────────────────────────────────────
+    count = len(filtered_qsos)
+    html += f'<h2>Excluded QSOs ({count})</h2>\n'
+    if filtered_qsos:
+        html += (
+            '<p>The following QSO records were excluded from all statistics. '
+            'Common causes: county exchange contains a slash (county-line notation logged '
+            'in the exchange field), exchange code too short or too long, or timestamp '
+            'outside the official contest window.</p>'
+            '<table class="audit-table"><thead><tr>'
+            '<th>Log File</th><th>Station</th><th>Datetime</th>'
+            '<th>Freq</th><th>Mode</th>'
+            '<th>Tx Call</th><th>Tx County</th>'
+            '<th>Rx Call</th><th>Rx County</th>'
+            '<th>Reason</th>'
+            '</tr></thead><tbody>'
+        )
+        for q in filtered_qsos:
+            html += (
+                f'<tr>'
+                f'<td>{q["log_file"]}</td>'
+                f'<td>{q["station_call"]}</td>'
+                f'<td>{q["datetime"]}</td>'
+                f'<td>{q["freq"]}</td>'
+                f'<td>{q["mode"]}</td>'
+                f'<td>{q["tx_call"]}</td>'
+                f'<td><b>{q["tx_county"]}</b></td>'
+                f'<td>{q["rx_call"]}</td>'
+                f'<td><b>{q["rx_county"]}</b></td>'
+                f'<td class="reason">{q["reason"]}</td>'
+                f'</tr>'
+            )
+        html += '</tbody></table>\n'
+    else:
+        html += '<p>None — all QSO records passed validation.</p>\n'
+
+    html += '</body></html>'
+    return html
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate contest statistics')
     parser.add_argument('--meta-db', required=True, help='Path to contest_meta.db')
@@ -527,6 +692,8 @@ def main():
     parser.add_argument('--contest-name', required=True, help='Contest display name (e.g. "2025 New York QSO Party")')
     parser.add_argument('--contest-start', required=True, help='Contest start UTC (e.g. "2025-10-18T14:00:00")')
     parser.add_argument('--contest-end',   required=True, help='Contest end UTC (e.g. "2025-10-19T02:00:00")')
+    parser.add_argument('--normalizations', default=None, help='Path to callsign_normalizations.json')
+    parser.add_argument('--mobiles', default=None, help='Path to mobile_stations.json')
     args = parser.parse_args()
 
     contest_start = args.contest_start.replace('T', ' ')
@@ -548,6 +715,21 @@ def main():
     with open(html_path, 'w') as f:
         f.write(format_stats_html(stats, args.contest_name))
     print(f"Saved {html_path}")
+
+    normalizations = []
+    if args.normalizations and Path(args.normalizations).exists():
+        with open(args.normalizations) as f:
+            normalizations = json.load(f)
+
+    mobile_discrepancies = build_mobile_discrepancies(
+        args.meta_db, args.qso_db, args.mobiles)
+
+    errata_path = output_dir / 'errata.html'
+    with open(errata_path, 'w') as f:
+        f.write(format_errata_html(
+            stats.get('filtered_qsos', []), normalizations,
+            mobile_discrepancies, args.contest_name))
+    print(f"Saved {errata_path}")
 
     print(f"Total Logs: {stats['total_logs']}")
     print(f"Host-State Stations: {stats['ny_stations']}")

@@ -18,8 +18,19 @@ def get_legend_css():
 def get_legend_js(color_thresholds, color_palette, title="QSOs per County"):
     """Return JavaScript functions for legend management"""
     return f'''
+        function roundNice(val) {{
+            if (val <= 0) return 0;
+            const mag = Math.pow(10, Math.floor(Math.log10(val)));
+            const step = mag / 2;
+            return Math.round(val / step) * step;
+        }}
+
+        function getThresholds(maxCount) {{
+            return {color_thresholds}.map(t => t === 0 ? 0 : Math.max(1, Math.round(roundNice(t * maxCount))));
+        }}
+
         function getColor(count, maxCount) {{
-            const thresholds = {color_thresholds}.map(t => maxCount * t);
+            const thresholds = getThresholds(maxCount);
             const colors = {color_palette};
 
             for (let i = 0; i < thresholds.length; i++) {{
@@ -31,16 +42,23 @@ def get_legend_js(color_thresholds, color_palette, title="QSOs per County"):
         }}
 
         function updateLegend(maxCount) {{
-            const thresholds = {color_thresholds}.map(t => maxCount * t);
+            if (maxCount === 0) {{
+                document.getElementById('legend').innerHTML =
+                    '<div class="legend-title">{title}</div>' +
+                    '<div class="legend-item"><div class="legend-color" style="background-color:{color_palette[0]}"></div>' +
+                    '<span style="font-size:12px;">0</span></div>';
+                return;
+            }}
+            const thresholds = getThresholds(maxCount);
             const colors = {color_palette};
 
             let legendHtml = '<div class="legend-title">{title}</div>';
-            for (let i = 0; i < colors.length; i++) {{
-                const min = i === 0 ? 0 : Math.round(thresholds[i - 1]) + 1;
-                const max = i < thresholds.length ? Math.round(thresholds[i]) : Math.round(maxCount);
+            for (let i = colors.length - 1; i >= 0; i--) {{
+                const min = i === 0 ? 0 : thresholds[i - 1] + 1;
+                const max = i < thresholds.length ? thresholds[i] : maxCount;
                 legendHtml += `<div class="legend-item">
                     <div class="legend-color" style="background-color: ${{colors[i]}}"></div>
-                    <span style="font-size: 12px;">${{min}} - ${{max}}</span>
+                    <span style="font-size: 12px;">${{min}} – ${{max}}</span>
                 </div>`;
             }}
             document.getElementById('legend').innerHTML = legendHtml;

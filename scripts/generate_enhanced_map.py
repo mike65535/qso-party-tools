@@ -47,7 +47,15 @@ def get_county_data(meta_db, qso_db, valid_counties):
     return county_qsos, county_top_stations, total_qsos
 
 
-def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, name_map):
+MAP_ABOUT = (
+    "This map shows total QSO activity by NY county for the entire contest period. "
+    "County color reflects the number of QSOs logged by stations operating from that county; "
+    "hover over a county for a quick summary or click for the top stations. "
+    "Counties with no submitted logs appear in gray even if they were worked by other stations. "
+    "The color scale uses seven bands relative to the county with the highest QSO total."
+)
+
+def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, name_map, map_about=MAP_ABOUT):
     """Generate the complete HTML map file."""
     county_qsos, county_top_stations, total_qsos = get_county_data(meta_db, qso_db, valid_counties)
 
@@ -83,7 +91,10 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
     <style>
         body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; background: white; }}
         #map {{ position: absolute; top: 0; bottom: 50px; left: 0; right: 0; background: white; }}
-        #info {{ position: absolute; bottom: 0; left: 0; right: 0; height: 50px; background: #2c3e50; color: white; padding: 15px; text-align: center; z-index: 1000; font-size: 16px; }}
+        #info {{ position: absolute; bottom: 0; left: 0; right: 0; height: 50px; background: #2c3e50; color: white; padding: 0 15px; display: flex; align-items: center; justify-content: center; z-index: 1000; font-size: 16px; }}
+        #info-text {{ flex: 1; text-align: center; }}
+        #about-btn {{ background: #3498db; color: white; border: none; padding: 5px 11px; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap; }}
+        #about-btn:hover {{ background: #2980b9; }}
         .popup-content {{ min-width: 250px; font-size: 16px; }}
         .popup-title {{ font-size: 18px; font-weight: bold; margin-bottom: 10px; }}
         .popup-qsos {{ font-size: 16px; margin-bottom: 12px; }}
@@ -98,7 +109,7 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
         }}
         .leaflet-interactive {{ outline: none !important; }}
         .leaflet-interactive:focus {{ outline: none !important; }}
-        #map-legend {{ position: absolute; bottom: 60px; right: 10px; z-index: 1000;
+        #map-legend {{ position: fixed; top: 10px; right: 10px; z-index: 9999;
                        background: white; padding: 10px 14px; border-radius: 6px;
                        box-shadow: 0 1px 5px rgba(0,0,0,0.3); line-height: 1.6;
                        font-size: 13px; min-width: 160px; }}
@@ -106,12 +117,21 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
         .map-legend-item {{ display: flex; align-items: center; gap: 8px; margin: 2px 0; }}
         .map-legend-swatch {{ width: 18px; height: 18px; border: 1px solid #aaa;
                               flex-shrink: 0; border-radius: 2px; }}
+        #about-panel {{ display: none; position: fixed; bottom: 50px; left: 0; right: 0;
+                        background: rgba(44,62,80,0.96); color: #ecf0f1;
+                        padding: 14px 48px 14px 20px; font-size: 13px; line-height: 1.6; z-index: 9998; }}
+        #about-panel.visible {{ display: block; }}
+        #about-close {{ position: absolute; top: 8px; right: 12px; background: none; border: none;
+                        color: #ecf0f1; font-size: 18px; cursor: pointer; }}
     </style>
 </head>
 <body>
-    <div id="map"></div>
-    <div id="map-legend"><h4>QSOs per County</h4></div>
-    <div id="info">{title} | {total_qsos_by_county:,} QSOs from {active_counties} of {num_counties} Counties</div>
+    <div id="map"><div id="map-legend"><h4>QSOs per County</h4></div></div>
+    <div id="about-panel">{map_about}<button id="about-close" onclick="toggleAbout()">✕</button></div>
+    <div id="info">
+        <span id="info-text">{title} | {total_qsos_by_county:,} QSOs from {active_counties} of {num_counties} Counties</span>
+        <button id="about-btn" onclick="toggleAbout()">ℹ About</button>
+    </div>
     <script>
         const boundaries = {boundaries_json};
         const countyData = {json.dumps(county_data, indent=2)};
@@ -129,20 +149,28 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
             catch(e) {{ console.log('Union failed for feature', i); }}
         }}
 
-        L.tileLayer('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
-            {{ attribution: '' }}).addTo(map);
+        const maxQsos = Math.max(...Object.values(countyData).map(d => d.qsos));
+
+        // Round a value to the nearest "nice" step (half a power of 10)
+        function roundNice(val) {{
+            if (val <= 0) return 0;
+            const mag = Math.pow(10, Math.floor(Math.log10(val)));
+            const step = mag / 2;
+            return Math.round(val / step) * step;
+        }}
+
+        // Six breakpoints derived from percentage thresholds, snapped to nice numbers.
+        // colors[0] = lightest (lowest band), colors[6] = darkest (highest band).
+        const PCT_BREAKS = [0.05, 0.1, 0.2, 0.4, 0.6, 0.8];
+        const breaks = PCT_BREAKS.map(t => Math.max(1, roundNice(t * maxQsos)));
+        const colors = ['#FED976','#FEB24C','#FD8D3C','#FC4E2A','#E31A1C','#BD0026','#800026'];
 
         function getColor(qsos) {{
-            const maxQsos = Math.max(...Object.values(countyData).map(d => d.qsos));
             if (qsos === 0) return '#e8e8e8';
-            const intensity = qsos / maxQsos;
-            if (intensity > 0.8) return '#800026';
-            if (intensity > 0.6) return '#BD0026';
-            if (intensity > 0.4) return '#E31A1C';
-            if (intensity > 0.2) return '#FC4E2A';
-            if (intensity > 0.1) return '#FD8D3C';
-            if (intensity > 0.05) return '#FEB24C';
-            return '#FED976';
+            for (let i = breaks.length - 1; i >= 0; i--) {{
+                if (qsos >= breaks[i]) return colors[i + 1];
+            }}
+            return colors[0];
         }}
 
         L.geoJSON(boundaries, {{
@@ -209,22 +237,26 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
 
         map.fitBounds(L.geoJSON(boundaries).getBounds(), {{padding: [30, 30]}});
 
-        // Legend
-        const maxQsos = Math.max(...Object.values(countyData).map(d => d.qsos));
-        const thresholds = [0.8, 0.6, 0.4, 0.2, 0.1, 0.05];
-        const colors     = ['#800026','#BD0026','#E31A1C','#FC4E2A','#FD8D3C','#FEB24C','#FED976'];
-        const legendDiv  = document.getElementById('map-legend');
-        thresholds.forEach((t, i) => {{
-            const lo = Math.round(t * maxQsos);
-            const hi = i === 0 ? maxQsos : Math.round(thresholds[i-1] * maxQsos) - 1;
-            const label = i === 0 ? `&gt; ${{lo.toLocaleString()}}` : `${{lo.toLocaleString()}} – ${{hi.toLocaleString()}}`;
-            legendDiv.innerHTML += `<div class="map-legend-item">
-                <div class="map-legend-swatch" style="background:${{colors[i]}}"></div>
-                <span>${{label}}</span></div>`;
-        }});
+        function toggleAbout() {{
+            document.getElementById('about-panel').classList.toggle('visible');
+        }}
+
+        // Legend — built from the same breaks[] used by getColor, so labels always match colors
+        const legendDiv = document.getElementById('map-legend');
+        // Top band: > breaks[5]
         legendDiv.innerHTML += `<div class="map-legend-item">
-            <div class="map-legend-swatch" style="background:#FED976"></div>
-            <span>1 – ${{Math.round(0.05 * maxQsos).toLocaleString()}}</span></div>`;
+            <div class="map-legend-swatch" style="background:${{colors[6]}}"></div>
+            <span>&gt; ${{breaks[5].toLocaleString()}}</span></div>`;
+        // Middle bands: breaks[i] – breaks[i+1]-1, darkest first
+        for (let i = 4; i >= 0; i--) {{
+            legendDiv.innerHTML += `<div class="map-legend-item">
+                <div class="map-legend-swatch" style="background:${{colors[i+1]}}"></div>
+                <span>${{breaks[i].toLocaleString()}} – ${{(breaks[i+1]-1).toLocaleString()}}</span></div>`;
+        }}
+        // Bottom band: 1 – breaks[0]-1
+        legendDiv.innerHTML += `<div class="map-legend-item">
+            <div class="map-legend-swatch" style="background:${{colors[0]}}"></div>
+            <span>1 – ${{(breaks[0]-1).toLocaleString()}}</span></div>`;
         legendDiv.innerHTML += `<div class="map-legend-item">
             <div class="map-legend-swatch" style="background:#e8e8e8"></div>
             <span>No activity</span></div>`;
@@ -262,6 +294,7 @@ def main():
                         help='GeoJSON county boundaries file (default: reference/ny_counties.json)')
     parser.add_argument('--name-map', help='JSON file mapping county names to abbreviations (uses NY defaults if omitted)')
     parser.add_argument('--title', default='QSOs made from host-state stations')
+    parser.add_argument('--about', default=MAP_ABOUT, help='About panel text')
     args = parser.parse_args()
 
     name_map = DEFAULT_NAME_MAP
@@ -273,7 +306,7 @@ def main():
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     html = generate_map_html(args.meta_db, args.qso_db, args.boundaries,
-                             args.title, valid_counties, name_map)
+                             args.title, valid_counties, name_map, args.about)
 
     with open(args.output, 'w') as f:
         f.write(html)

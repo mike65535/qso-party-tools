@@ -66,6 +66,7 @@ def main():
 
     meta_db = data_dir / 'contest_meta.db'
     qso_db = data_dir / 'contest_qsos.db'
+    normalizations_json = data_dir / 'callsign_normalizations.json'
     mobiles_json = stats_dir / 'mobile_stations.json'
     county_counts_json = stats_dir / 'county_qso_counts_all.json'
     county_line_json = stats_dir / 'county_line_periods.json'
@@ -150,6 +151,8 @@ def main():
         '--contest-name', contest_name,
         '--contest-start', contest_start_iso,
         '--contest-end', contest_end_iso,
+        '--normalizations', normalizations_json,
+        '--mobiles', mobiles_json,
     ], script_dir)
 
     # 8. Generate enhanced map

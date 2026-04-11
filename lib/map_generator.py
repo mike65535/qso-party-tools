@@ -14,7 +14,7 @@ class NYMapGenerator:
         return f'''
         const boundaries = {json.dumps(self.boundaries)};
 
-        const map = L.map('map');
+        const map = L.map('map', {{ zoomDelta: 0.25, zoomSnap: 0.25 }});
 
         // Create NY state boundary merge (union all counties into one shape)
         const allFeatures = boundaries.features;
@@ -26,11 +26,6 @@ class NYMapGenerator:
                 console.log('Union failed for feature', i);
             }}
         }}
-
-        // White background tile layer
-        L.tileLayer('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', {{
-            attribution: ''
-        }}).addTo(map);
 
         // Add county layers with thin borders
         L.geoJSON(boundaries, {{
@@ -97,7 +92,7 @@ class NYMapGenerator:
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
     <style>
         body {{ margin: 0; padding: 0; }}
-        #map {{ height: 100vh; width: 100%; }}
+        #map {{ height: 100vh; width: 100%; background: white; }}
     </style>
 </head>
 <body>

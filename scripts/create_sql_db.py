@@ -4,9 +4,16 @@ Create SQL databases from contest log files (Cabrillo format).
 Produces: contest_meta.db (station info/categories) and contest_qsos.db (QSO data)
 """
 
+import json
+import re
 import sqlite3
 import sys
 from pathlib import Path
+
+
+def normalize_callsign(call):
+    """Strip trailing portable/mobile suffixes like /M, /P, /1, /QRP etc."""
+    return re.sub(r'/[A-Z0-9]+$', '', call.upper().strip())
 
 
 class ContestDatabaseCreator:
@@ -15,7 +22,8 @@ class ContestDatabaseCreator:
         self.output_dir = Path(output_dir)
 
     def create_meta_db(self):
-        """Create database for station metadata and categories."""
+        """Create database for station metadata and categories.
+        Returns list of callsign normalization events."""
         db_path = self.output_dir / 'contest_meta.db'
         if db_path.exists():
             db_path.unlink()
@@ -41,9 +49,18 @@ class ContestDatabaseCreator:
             )
         ''')
 
+        normalizations = []
         for log_file in self.logs_dir.glob('*.log'):
             metadata = self.parse_metadata(log_file)
-            callsign = metadata.get('callsign', log_file.stem.upper())
+            raw = metadata.get('callsign', log_file.stem.upper())
+            callsign = normalize_callsign(raw)
+            if callsign != raw.upper().strip():
+                normalizations.append({
+                    'log_file': log_file.name,
+                    'original': raw,
+                    'normalized': callsign,
+                    'reason': f'Trailing suffix stripped: {raw!r} → {callsign!r}',
+                })
             conn.execute('''
                 INSERT OR REPLACE INTO stations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
@@ -67,6 +84,7 @@ class ContestDatabaseCreator:
         conn.commit()
         conn.close()
         print(f"Created {db_path}")
+        return normalizations
 
     def create_qso_db(self):
         """Create database for QSO data."""
@@ -96,7 +114,7 @@ class ContestDatabaseCreator:
 
         for log_file in self.logs_dir.glob('*.log'):
             metadata = self.parse_metadata(log_file)
-            station_call = metadata.get('callsign', log_file.stem.upper())
+            station_call = normalize_callsign(metadata.get('callsign', log_file.stem.upper()))
 
             with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
@@ -187,7 +205,7 @@ class ContestDatabaseCreator:
             'mode': parts[2],
             'date': parts[3],
             'time': parts[4],
-            'tx_call': parts[5].rstrip('/M').rstrip('-M'),
+            'tx_call': normalize_callsign(parts[5]),
             'tx_rst': parts[6],
             'tx_county': parts[7],
             'rx_call': parts[8],
@@ -199,9 +217,13 @@ class ContestDatabaseCreator:
         """Create both databases."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         print("Creating metadata database...")
-        self.create_meta_db()
+        normalizations = self.create_meta_db()
         print("Creating QSO database...")
         self.create_qso_db()
+        norm_path = self.output_dir / 'callsign_normalizations.json'
+        with open(norm_path, 'w') as f:
+            json.dump(normalizations, f, indent=2)
+        print(f"Created {norm_path} ({len(normalizations)} normalization(s))")
         print("Done!")
 
 
