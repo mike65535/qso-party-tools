@@ -34,6 +34,17 @@ CHART_META = {
         'Stacked view of CW activity across all HF bands (160m–10m) over the contest period.'),
     'allbands_ph':         ('All Bands — Phone Mode',
         'Stacked view of Phone activity across all HF bands (160m–10m) over the contest period.'),
+    'wordcloud_composite': ('Callsign Word Clouds',
+        'Top callsigns by QSO count: NY mobile, NY fixed, out-of-state, and DX — click to explore.'),
+}
+
+# Filename fragments to exclude from the gallery (individual word cloud PNGs — composite covers them)
+GALLERY_EXCLUDE = ['wordcloud_ny_mobile', 'wordcloud_ny_fixed', 'wordcloud_out_of_state', 'wordcloud_dx']
+
+# Charts whose thumbnail should link to an HTML page instead of the full PNG.
+# Key: filename fragment; Value: HTML filename suffix to substitute for the PNG.
+HTML_OVERRIDES = {
+    'wordcloud_composite': '_wordclouds.html',
 }
 
 def _chart_meta(filename):
@@ -71,13 +82,28 @@ def create_thumbnails(charts_dir, thumbs_dir, thumb_size=(300, 200)):
     return created
 
 
+def _html_override(filename):
+    """Return an HTML link target override for this chart, or None."""
+    lower = filename.lower()
+    for key, suffix in HTML_OVERRIDES.items():
+        if key in lower:
+            # Derive the HTML filename: strip the chart PNG name prefix, keep contest_id prefix
+            stem = Path(filename).stem           # e.g. NYQP_2025_wordcloud_composite
+            # Replace everything from the key fragment onward with the suffix
+            idx = stem.lower().find(key.split('_')[0])  # find first token of key
+            contest_prefix = stem[:idx].rstrip('_')
+            return contest_prefix + suffix
+    return None
+
+
 def generate_gallery_html(chart_files, charts_rel, thumbs_rel, contest_name):
     """Return full gallery HTML. Paths are relative to the output HTML file."""
     items = []
     for chart_path in chart_files:
         title, desc = _chart_meta(chart_path.name)
         thumb_src = f"{thumbs_rel}/thumb_{chart_path.name}"
-        full_src  = f"{charts_rel}/{chart_path.name}"
+        override  = _html_override(chart_path.name)
+        full_src  = override if override else f"{charts_rel}/{chart_path.name}"
         items.append(f'''
         <div class="chart-item">
             <img src="{thumb_src}" alt="{title}" class="chart-thumbnail"
@@ -149,8 +175,10 @@ def main():
     thumbs_dir = charts_dir / 'thumbnails'
 
     print("Creating thumbnails...")
-    chart_files = create_thumbnails(charts_dir, thumbs_dir,
-                                    thumb_size=(args.thumb_width, args.thumb_height))
+    all_files = create_thumbnails(charts_dir, thumbs_dir,
+                                  thumb_size=(args.thumb_width, args.thumb_height))
+    chart_files = [f for f in all_files
+                   if not any(ex in f.name.lower() for ex in GALLERY_EXCLUDE)]
     if not chart_files:
         print("No charts found — gallery not generated.")
         return

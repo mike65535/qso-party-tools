@@ -9,6 +9,7 @@ import os
 import sqlite3
 from pathlib import Path
 
+from PIL import Image
 from wordcloud import WordCloud
 
 
@@ -74,6 +75,22 @@ def make_wordcloud(freq, color, output_path, width=800, height=500):
     ).generate_from_frequencies(top)
     wc.to_file(str(output_path))
     print(f"  Saved {output_path.name} ({len(top)} callsigns)")
+    return True
+
+
+def make_composite(cloud_pngs, output_path):
+    """Stitch up to 4 word cloud PNGs into a 2x2 composite image."""
+    imgs = [(p, t) for p, t in cloud_pngs if p.exists()]
+    if not imgs:
+        return False
+    tiles = [Image.open(p) for p, _ in imgs]
+    w, h = tiles[0].size
+    cols, rows = 2, (len(tiles) + 1) // 2
+    composite = Image.new('RGB', (cols * w, rows * h), (240, 240, 240))
+    for i, img in enumerate(tiles):
+        composite.paste(img, ((i % cols) * w, (i // cols) * h))
+    composite.save(str(output_path))
+    print(f"  Saved composite: {output_path.name}")
     return True
 
 
@@ -166,10 +183,18 @@ def main():
     print(f"  NY mobile: {len(ny_mobile)}, NY fixed: {len(ny_fixed)}, "
           f"Out-of-state: {len(out_of_state)}, DX: {len(dx)}")
 
-    mobile_png = out_dir / f'{cid}_wordcloud_ny_mobile.png'
-    fixed_png  = out_dir / f'{cid}_wordcloud_ny_fixed.png'
-    out_png    = out_dir / f'{cid}_wordcloud_out_of_state.png'
-    dx_png     = out_dir / f'{cid}_wordcloud_dx.png'
+    mobile_png    = out_dir / f'{cid}_wordcloud_ny_mobile.png'
+    fixed_png     = out_dir / f'{cid}_wordcloud_ny_fixed.png'
+    out_png       = out_dir / f'{cid}_wordcloud_out_of_state.png'
+    dx_png        = out_dir / f'{cid}_wordcloud_dx.png'
+    composite_png = out_dir / f'{cid}_wordcloud_composite.png'
+
+    clouds = [
+        (mobile_png, 'NY Mobile Stations'),
+        (fixed_png,  'NY Fixed Stations'),
+        (out_png,    'Out-of-State Stations'),
+        (dx_png,     'DX Stations'),
+    ]
 
     print("Generating word clouds...")
     make_wordcloud(ny_mobile,    COLORS['mobile'], mobile_png)
@@ -177,13 +202,11 @@ def main():
     make_wordcloud(out_of_state, COLORS['out'],    out_png)
     make_wordcloud(dx,           COLORS['dx'],     dx_png)
 
+    print("Generating composite...")
+    make_composite(clouds, composite_png)
+
     print("Generating HTML...")
-    generate_html([
-        (mobile_png, 'NY Mobile Stations'),
-        (fixed_png,  'NY Fixed Stations'),
-        (out_png,    'Out-of-State Stations'),
-        (dx_png,     'DX Stations'),
-    ], html_path, args.contest_name)
+    generate_html(clouds, html_path, args.contest_name)
     print("Done!")
 
 
