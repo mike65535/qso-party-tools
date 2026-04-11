@@ -125,10 +125,13 @@ def main():
         '--duration-hours', duration_hours
     ], script_dir)
 
-    # 6. Generate thumbnails
-    print("\n[6/11] Generating chart thumbnails...")
-    run('create_thumbnails.py', [
-        '--charts-dir', charts_dir
+    # 6. Generate chart thumbnails and gallery HTML
+    print("\n[6/11] Generating chart gallery...")
+    gallery_html = html_dir / f'{contest_id}_chart_gallery.html'
+    run('generate_chart_gallery.py', [
+        '--charts-dir', charts_dir,
+        '--output-html', gallery_html,
+        '--contest-name', contest_name,
     ], script_dir)
 
     # Derive contest ISO timestamps (used by stats and animations)
