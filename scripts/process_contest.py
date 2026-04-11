@@ -134,6 +134,18 @@ def main():
         '--contest-name', contest_name,
     ], script_dir)
 
+    # 6b. Generate callsign word clouds
+    print("\n[6b] Generating callsign word clouds...")
+    wordcloud_html = html_dir / f'{contest_id}_wordclouds.html'
+    run('generate_callsign_wordclouds.py', [
+        '--meta-db', meta_db,
+        '--qso-db', qso_db,
+        '--output-dir', charts_dir,
+        '--output-html', wordcloud_html,
+        '--contest-name', contest_name,
+        '--contest-id', contest_id.upper().replace('-', '_'),
+    ], script_dir)
+
     # Derive contest ISO timestamps (used by stats and animations)
     schedule = config['schedule']
     contest_start_iso = f"{schedule['date']}T{schedule['start_time'].replace('Z', '')}"
