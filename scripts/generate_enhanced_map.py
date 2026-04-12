@@ -9,7 +9,12 @@ Requires a GeoJSON boundaries file for the host state (default: reference/ny_cou
 import sqlite3
 import json
 import argparse
+import sys
+import os
 from pathlib import Path
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from lib.vendor_assets import leaflet_turf_head_html
 
 
 def get_county_data(meta_db, qso_db, valid_counties):
@@ -85,9 +90,7 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
 <head>
     <meta charset="utf-8">
     <title>{title}</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    {leaflet_turf_head_html()}
     <style>
         body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; background: white; }}
         #map {{ position: absolute; top: 0; bottom: 50px; left: 0; right: 0; background: white; }}

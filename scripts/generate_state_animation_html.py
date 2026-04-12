@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from lib.animation_controls import get_controls_html, get_controls_css, get_controls_js
 from lib.animation_legend import get_legend_html, get_legend_css, get_legend_js
+from lib.vendor_assets import leaflet_head_html
 
 ANIMATION_SPEEDS = [1, 2, 5, 10, 20, 50]
 COLOR_THRESHOLDS = [0, 0.05, 0.15, 0.35, 0.65]
@@ -177,8 +178,7 @@ def generate_state_animation_html(animation_data_file, boundaries_file, canada_b
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    {leaflet_head_html()}
     <style>
         body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; }}
         #map {{ height: 100vh; width: 100%; background: white; }}

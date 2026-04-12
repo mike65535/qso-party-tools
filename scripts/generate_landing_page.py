@@ -41,7 +41,7 @@ TOOL_CARDS = [
      'throughout the contest period.',
      '_mobile_animation.html',
      '#c0392b'),
-    ('US State Activity',
+    ('US and Canada Activity',
      'See how participation from every state and Canadian province '
      'grew over the contest period.',
      '_state_animation.html',

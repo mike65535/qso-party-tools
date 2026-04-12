@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from lib.animation_controls import get_controls_html, get_controls_css, get_controls_js
+from lib.vendor_assets import leaflet_turf_head_html
 from lib.animation_legend import get_legend_html, get_legend_css, get_legend_js
 
 ANIMATION_SPEEDS = [1, 2, 5, 10, 20, 50]
@@ -69,9 +70,7 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    {leaflet_turf_head_html()}
     <style>
         body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; }}
         #map {{ height: 95vh; width: 100%; background-color: white; }}

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+from lib.vendor_assets import leaflet_turf_head_html
 
 class NYMapGenerator:
     def __init__(self, boundaries_file, county_names_file):
@@ -87,9 +88,7 @@ class NYMapGenerator:
 <head>
     <meta charset="utf-8">
     <title>{title}</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    {leaflet_turf_head_html()}
     <style>
         body {{ margin: 0; padding: 0; }}
         #map {{ height: 100vh; width: 100%; background: white; }}
