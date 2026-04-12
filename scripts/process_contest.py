@@ -228,7 +228,25 @@ def main():
     else:
         print("\n[11/11] Skipping US state animation (reference/us_states.json not found)")
 
+    # 12. Generate landing page
+    print("\n[12/12] Generating landing page...")
+    landing_html = html_dir / f'{contest_id}_landing.html'
+    dx_countries = config.get('dx_countries')   # optional in config JSON
+    run_args = [
+        '--html-dir',     html_dir,
+        '--charts-dir',   charts_dir,
+        '--output-html',  landing_html,
+        '--contest-name', contest_name,
+        '--contest-id',   contest_id,
+        '--meta-db',      meta_db,
+        '--qso-db',       qso_db,
+    ]
+    if dx_countries:
+        run_args += ['--dx-countries', dx_countries]
+    run('generate_landing_page.py', run_args, script_dir)
+
     print(f"\n=== Done! Outputs in {output_dir} ===")
+    print(f"    Landing page: {landing_html}")
 
 
 if __name__ == '__main__':
