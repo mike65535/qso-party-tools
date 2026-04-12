@@ -91,8 +91,8 @@ def fetch_all_frequency_maps(meta_db, qso_db):
             # Station-type filter
             if f_stype == 'MOBILE' and stype != 'MOBILE': continue
             if f_stype is None and f_loc == 'NY' and stype == 'MOBILE': continue
-            # NY category clouds are single-op only (mobile cloud includes all op types)
-            if f_loc == 'NY' and f_stype != 'MOBILE' and op_cat != 'SINGLE-OP': continue
+            # All non-mobile clouds are single-op only; mobile cloud includes all op types
+            if f_stype != 'MOBILE' and op_cat != 'SINGLE-OP': continue
             # Mode / power filters
             if f_mode  is not None and mode  != f_mode:  continue
             if f_power is not None and power != f_power: continue
