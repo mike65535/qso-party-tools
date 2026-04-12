@@ -92,7 +92,7 @@ def _html_override(filename):
             # Replace everything from the key fragment onward with the suffix
             idx = stem.lower().find(key.split('_')[0])  # find first token of key
             contest_prefix = stem[:idx].rstrip('_')
-            return contest_prefix + suffix
+            return contest_prefix.lower() + suffix
     return None
 
 
