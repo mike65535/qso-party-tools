@@ -30,10 +30,14 @@ def _single_color_fn(color):
 
 
 def fetch_frequency_maps(meta_db, qso_db):
-    """Return four {callsign: qso_count} dicts: NY mobile, NY fixed, out-of-state, DX."""
+    """Return four {callsign: weight} dicts: NY mobile, NY fixed, out-of-state, DX.
+
+    NY stations are weighted by claimed_score (if available), else QSO count.
+    Out-of-state and DX stations are weighted by QSO count.
+    """
     meta_conn = sqlite3.connect(meta_db)
-    stations = {r[0]: (r[1], r[2]) for r in meta_conn.execute(
-        "SELECT callsign, location, station_type FROM stations"
+    stations = {r[0]: (r[1], r[2], r[3]) for r in meta_conn.execute(
+        "SELECT callsign, location, station_type, claimed_score FROM stations"
     ).fetchall()}
     meta_conn.close()
 
@@ -45,12 +49,13 @@ def fetch_frequency_maps(meta_db, qso_db):
 
     ny_mobile, ny_fixed, out_of_state, dx = {}, {}, {}, {}
     for call, n in counts.items():
-        loc, stype = stations.get(call, (None, None))
+        loc, stype, score = stations.get(call, (None, None, None))
         if loc == 'NY':
+            weight = score if score else n
             if stype == 'MOBILE':
-                ny_mobile[call] = n
+                ny_mobile[call] = weight
             else:
-                ny_fixed[call] = n
+                ny_fixed[call] = weight
         elif loc == 'DX':
             dx[call] = n
         else:
@@ -151,7 +156,7 @@ def generate_html(clouds, html_path, contest_name):
 </head>
 <body>
     <h1>{contest_name} — Callsign Word Clouds</h1>
-    <p class="sub">Top {MAX_WORDS} callsigns per group, sized by QSO count. Click any image to open full size.</p>
+    <p class="sub">Top {MAX_WORDS} callsigns per group. NY stations sized by claimed score; out-of-state and DX by QSO count. Click any image to open full size.</p>
     <div class="cloud-grid">{items}
     </div>
 </body>
