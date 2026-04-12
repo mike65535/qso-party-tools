@@ -57,11 +57,12 @@ def fetch_all_frequency_maps(meta_db, qso_db):
     meta_conn = sqlite3.connect(meta_db)
     stations = {}
     for r in meta_conn.execute(
-        "SELECT callsign, location, station_type, mode, power, claimed_score FROM stations"
+        "SELECT callsign, location, station_type, mode, power, claimed_score, operator_category FROM stations"
     ).fetchall():
         stations[r[0]] = {
             'location': r[1], 'station_type': r[2],
             'mode': r[3], 'power': r[4], 'claimed_score': r[5],
+            'operator_category': r[6],
         }
     meta_conn.close()
 
@@ -80,6 +81,7 @@ def fetch_all_frequency_maps(meta_db, qso_db):
         mode  = s.get('mode')
         power = s.get('power')
         score = s.get('claimed_score')
+        op_cat = s.get('operator_category')
 
         for key, _title, f_loc, f_stype, f_mode, f_power, _color in ALL_CLOUDS:
             # Location filter
@@ -89,6 +91,8 @@ def fetch_all_frequency_maps(meta_db, qso_db):
             # Station-type filter
             if f_stype == 'MOBILE' and stype != 'MOBILE': continue
             if f_stype is None and f_loc == 'NY' and stype == 'MOBILE': continue
+            # NY category clouds are single-op only (mobile cloud includes all op types)
+            if f_loc == 'NY' and f_stype != 'MOBILE' and op_cat != 'SINGLE-OP': continue
             # Mode / power filters
             if f_mode  is not None and mode  != f_mode:  continue
             if f_power is not None and power != f_power: continue
