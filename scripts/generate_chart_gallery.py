@@ -34,17 +34,17 @@ CHART_META = {
         'Stacked view of CW activity across all HF bands (160m–10m) over the contest period.'),
     'allbands_ph':         ('All Bands — Phone Mode',
         'Stacked view of Phone activity across all HF bands (160m–10m) over the contest period.'),
-    'wordcloud_composite': ('Callsign Word Clouds',
-        'Top callsigns by QSO count: NY mobile, NY fixed, out-of-state, and DX — click to explore.'),
+    'wordcloud_composite_instate':  ('NY In-State Callsign Clouds',
+        'Top NY callsigns by category (Mobile, Phone, Mixed, CW × power level) — click to explore.'),
+    'wordcloud_composite_outstate': ('Out-of-State & DX Callsign Clouds',
+        'Top out-of-state and DX callsigns by category — click to explore.'),
 }
-
-# Filename fragments to exclude from the gallery (individual word cloud PNGs — composite covers them)
-GALLERY_EXCLUDE = ['wordcloud_ny_mobile', 'wordcloud_ny_fixed', 'wordcloud_out_of_state', 'wordcloud_dx']
 
 # Charts whose thumbnail should link to an HTML page instead of the full PNG.
 # Key: filename fragment; Value: HTML filename suffix to substitute for the PNG.
 HTML_OVERRIDES = {
-    'wordcloud_composite': '_wordclouds.html',
+    'wordcloud_composite_instate':  '_wordclouds_instate.html',
+    'wordcloud_composite_outstate': '_wordclouds_outstate.html',
 }
 
 def _chart_meta(filename):
@@ -178,7 +178,7 @@ def main():
     all_files = create_thumbnails(charts_dir, thumbs_dir,
                                   thumb_size=(args.thumb_width, args.thumb_height))
     chart_files = [f for f in all_files
-                   if not any(ex in f.name.lower() for ex in GALLERY_EXCLUDE)]
+                   if not ('wordcloud' in f.name.lower() and 'composite' not in f.name.lower())]
     if not chart_files:
         print("No charts found — gallery not generated.")
         return

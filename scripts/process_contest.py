@@ -136,12 +136,14 @@ def main():
 
     # 6b. Generate callsign word clouds
     print("\n[6b] Generating callsign word clouds...")
-    wordcloud_html = html_dir / f'{contest_id}_wordclouds.html'
+    wordcloud_instate_html  = html_dir / f'{contest_id}_wordclouds_instate.html'
+    wordcloud_outstate_html = html_dir / f'{contest_id}_wordclouds_outstate.html'
     run('generate_callsign_wordclouds.py', [
         '--meta-db', meta_db,
         '--qso-db', qso_db,
         '--output-dir', charts_dir,
-        '--output-html', wordcloud_html,
+        '--output-html-instate',  wordcloud_instate_html,
+        '--output-html-outstate', wordcloud_outstate_html,
         '--contest-name', contest_name,
         '--contest-id', contest_id.upper().replace('-', '_'),
     ], script_dir)
