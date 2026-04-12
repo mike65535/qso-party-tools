@@ -97,8 +97,8 @@ def fetch_all_frequency_maps(meta_db, qso_db):
             if f_mode  is not None and mode  != f_mode:  continue
             if f_power is not None and power != f_power: continue
 
-            # Weight: NY stations by claimed_score, others by QSO count
-            weight = (score if score else n) if loc == 'NY' else n
+            # Weight by claimed_score for everyone; fall back to QSO count if missing
+            weight = score if score else n
             maps[key][call] = weight
 
     return maps
@@ -205,7 +205,7 @@ def generate_html(clouds, html_path, contest_name, page_title, other_html=None, 
 </head>
 <body>
     <h1>{contest_name} — {page_title}</h1>
-    <p class="sub">Top {MAX_WORDS} callsigns per group. NY stations sized by claimed score; out-of-state and DX by QSO count. Click any image to open full size.</p>
+    <p class="sub">Top {MAX_WORDS} callsigns per group, sized by claimed score. Click any image to open full size.</p>
     {nav}
     <div class="cloud-grid">{items}
     </div>
