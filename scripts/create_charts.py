@@ -38,7 +38,27 @@ def create_score_boxplot(meta_db, qso_db, output_dir, contest_id):
         return f"{op}-{pwr}-{mode}-{stn}"
 
     data['category_id'] = data.apply(abbreviate, axis=1)
-    categories_list = sorted(data['category_id'].unique())
+
+    _stn_order  = {'F': 0, 'P': 1, 'M': 2}
+    _pwr_order  = {'HP': 0, 'LP': 1, 'QRP': 2}
+    _mode_order = {'CW': 0, 'PH': 1, 'MIX': 2}
+
+    def _cat_sort_key(cat):
+        parts = cat.split('-')
+        # format: OP-PWR-MODE-STN  (may have QRP as 3-char power)
+        stn  = parts[-1]
+        mode = parts[-2]
+        pwr  = '-'.join(parts[1:-2]) if len(parts) > 3 else parts[1] if len(parts) > 1 else ''
+        op   = parts[0]
+        _op_order = {'MM': 0, 'MS': 1, 'SO': 2}
+        return (
+            _stn_order.get(stn, 9),
+            _op_order.get(op, 9),
+            _pwr_order.get(pwr, 9),
+            _mode_order.get(mode, 9),
+        )
+
+    categories_list = sorted(data['category_id'].unique(), key=_cat_sort_key)
     box_data = [data[data['category_id'] == cat]['score'].values for cat in categories_list]
 
     plt.figure(figsize=(12, 8))
