@@ -9,12 +9,23 @@ also written to the charts directory for inclusion in the chart gallery.
 """
 
 import argparse
+import base64
 import os
 import sqlite3
 from pathlib import Path
 
 from PIL import Image
 from wordcloud import WordCloud
+
+
+def _embed_image(path):
+    """Return a base64 PNG data URI, or empty string on error."""
+    try:
+        with open(path, 'rb') as f:
+            data = base64.b64encode(f.read()).decode('ascii')
+        return f'data:image/png;base64,{data}'
+    except Exception:
+        return ''
 
 
 MAX_WORDS = 15
@@ -139,25 +150,32 @@ def make_composite(cloud_pngs, output_path, cols=2):
 
 
 def generate_html(clouds, html_path, contest_name, page_title, other_html=None, other_label=None):
-    """Generate a 2x3 grid HTML page.
+    """Generate a self-contained 2x3 grid HTML page with embedded images and lightbox.
 
     clouds: list of (png_path, title) — only existing PNGs are shown.
-    other_html / other_label: optional link to the companion page.
+    other_html / other_label: optional link to the companion page (same directory).
     """
-    def img_tag(png_path, title):
-        rel = Path(os.path.relpath(png_path, html_path.parent))
-        return f'''
+    existing = [(p, t) for p, t in clouds if p.exists()]
+
+    # Embed each cloud PNG as base64 for the lightbox CHARTS array
+    charts_b64 = [_embed_image(p) for p, _ in existing]
+    joined = ',\n  '.join(f"'{b}'" for b in charts_b64)
+    charts_js = f'const CHARTS = [\n  {joined}\n];'
+
+    items = ''
+    for i, (png_path, title) in enumerate(existing):
+        b64 = charts_b64[i]
+        items += f'''
         <div class="cloud-item">
             <h2>{title}</h2>
-            <img src="{rel}" alt="{title}" onclick="window.open('{rel}', '_blank')">
+            <img src="{b64}" alt="{title}" onclick="showLB({i})">
         </div>'''
-
-    items = ''.join(img_tag(p, t) for p, t in clouds if p.exists())
 
     nav = ''
     if other_html and other_label:
-        other_rel = Path(os.path.relpath(other_html, html_path.parent))
-        nav = f'<p class="sub"><a href="{other_rel}">{other_label} →</a></p>'
+        # Both files are in the same directory — just use the filename
+        other_name = Path(other_html).name
+        nav = f'<p class="sub"><a href="{other_name}">{other_label} &#8594;</a></p>'
 
     html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -201,14 +219,42 @@ def generate_html(clouds, html_path, contest_name, page_title, other_html=None, 
         @media (max-width: 700px) {{
             .cloud-grid {{ grid-template-columns: 1fr; }}
         }}
+        #lightbox {{
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.88); z-index: 9999;
+            align-items: center; justify-content: center; cursor: pointer;
+        }}
+        #lightbox.open {{ display: flex; }}
+        #lb-img {{ max-width: 92vw; max-height: 92vh; border-radius: 6px; }}
+        #lb-close {{
+            position: fixed; top: 14px; right: 22px;
+            color: #fff; font-size: 30px; cursor: pointer; user-select: none; opacity: 0.8;
+        }}
+        #lb-close:hover {{ opacity: 1; }}
     </style>
 </head>
 <body>
     <h1>{contest_name} — {page_title}</h1>
-    <p class="sub">Top {MAX_WORDS} callsigns per group, sized by claimed score. Click any image to open full size.</p>
+    <p class="sub">Top {MAX_WORDS} callsigns per group, sized by claimed score. Click any image to enlarge.</p>
     {nav}
     <div class="cloud-grid">{items}
     </div>
+    <div id="lightbox" onclick="hideLB()">
+        <span id="lb-close" onclick="hideLB()">&#x2715;</span>
+        <img id="lb-img" src="" alt="" onclick="event.stopPropagation()">
+    </div>
+    <script>
+        {charts_js}
+        function showLB(i) {{
+            document.getElementById('lb-img').src = CHARTS[i];
+            document.getElementById('lightbox').classList.add('open');
+        }}
+        function hideLB() {{
+            document.getElementById('lightbox').classList.remove('open');
+            document.getElementById('lb-img').src = '';
+        }}
+        document.addEventListener('keydown', e => {{ if (e.key === 'Escape') hideLB(); }});
+    </script>
 </body>
 </html>'''
 

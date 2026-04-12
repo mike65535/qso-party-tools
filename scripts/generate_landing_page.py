@@ -9,9 +9,20 @@ Two card types:
 """
 
 import argparse
+import base64
 import os
 import sqlite3
 from pathlib import Path
+
+
+def _embed_image(path):
+    """Return a base64 PNG data URI, or empty string on error."""
+    try:
+        with open(path, 'rb') as f:
+            data = base64.b64encode(f.read()).decode('ascii')
+        return f'data:image/png;base64,{data}'
+    except Exception:
+        return ''
 
 
 # ---------------------------------------------------------------------------
@@ -74,12 +85,12 @@ STATS_CARD = (
 )
 
 
-def _find_thumb(thumbs_dir, fragment):
-    """Return relative path string to first thumbnail matching fragment, or None."""
+def _find_thumb_b64(thumbs_dir, fragment):
+    """Return base64 data URI for first thumbnail matching fragment, or empty string."""
     for p in sorted(thumbs_dir.glob('thumb_*.png')):
         if fragment.lower() in p.name.lower():
-            return p
-    return None
+            return _embed_image(p)
+    return ''
 
 
 def _rel(from_html, to_path):
@@ -122,7 +133,7 @@ def generate_landing_html(contest_name, contest_id, html_dir, thumbs_dir,
         target = html_dir / f'{cid}{suffix}'
         if not target.exists():
             continue
-        href = _rel(output_html, target)
+        href = target.name   # sibling file
         tool_items.append(f'''
       <a class="card tool-card" href="{href}">
         <div class="tool-banner" style="background:{color}">
@@ -140,10 +151,10 @@ def generate_landing_html(contest_name, contest_id, html_dir, thumbs_dir,
         target = html_dir / f'{cid}{suffix}'
         if not target.exists():
             continue
-        href  = _rel(output_html, target)
-        thumb = _find_thumb(thumbs_dir, thumb_frag)
-        thumb_tag = (f'<img class="card-thumb" src="{_rel(output_html, thumb)}" alt="{title}">'
-                     if thumb else '<div class="thumb-placeholder"></div>')
+        href      = target.name   # sibling file — just the filename
+        thumb_b64 = _find_thumb_b64(thumbs_dir, thumb_frag)
+        thumb_tag = (f'<img class="card-thumb" src="{thumb_b64}" alt="{title}">'
+                     if thumb_b64 else '<div class="thumb-placeholder"></div>')
         chart_items.append(f'''
       <a class="card chart-card" href="{href}">
         {thumb_tag}
@@ -159,7 +170,7 @@ def generate_landing_html(contest_name, contest_id, html_dir, thumbs_dir,
     s_title, s_desc, s_suffix, s_color = STATS_CARD
     stats_target = html_dir / f'{cid}{s_suffix}'
     if stats_target.exists():
-        href = _rel(output_html, stats_target)
+        href = stats_target.name   # sibling file
         stats_item = f'''
       <a class="card tool-card" href="{href}">
         <div class="tool-banner" style="background:{s_color}">
