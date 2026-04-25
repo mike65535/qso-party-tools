@@ -1,0 +1,33 @@
+{
+  "contest_id": "bcqp_2026",
+  "name": "BC QSO Party",
+  "abbreviation": "BCQP",
+  "year": 2026,
+  "host_state": "BC",
+  "region_term": "District",
+  "schedule": {
+    "start_date": "2026-02-07",
+    "start_time": "16:00:00Z",
+    "end_date": "2026-02-08",
+    "end_time": "23:59:00Z",
+    "end_date_offset": 1,
+    "duration_hours": 32,
+    "segments": [
+      {"start": "2026-02-07T16:00:00Z", "end": "2026-02-08T03:59:00Z"},
+      {"start": "2026-02-08T16:00:00Z", "end": "2026-02-08T23:59:00Z"}
+    ]
+  },
+  "rules": {
+    "countyline_operations": false,
+    "mobile_operations": false,
+    "provinces_allowed": true,
+    "counties_count": 43
+  },
+  "geographic_scope": "us_canada",
+  "boundaries": "reference/bc_districts.json",
+  "animation": {
+    "frame_interval_minutes": 1,
+    "color_thresholds": [0.05, 0.15, 0.35, 0.65],
+    "exclude_outlier_scaling": true
+  }
+}

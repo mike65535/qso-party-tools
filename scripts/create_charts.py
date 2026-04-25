@@ -6,6 +6,8 @@ Produces: box plot, QSO distribution, QSO histogram, per-band activity, stacked 
 
 import sqlite3
 import argparse
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd

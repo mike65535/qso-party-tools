@@ -52,8 +52,10 @@ def main():
 
     contest_id = config['contest_id']
     contest_name = f"{config['year']} {config['name']}"
-    contest_start = f"{config['schedule']['date']} {config['schedule']['start_time'].replace('Z', '')}"
+    _start_date = config['schedule'].get('start_date') or config['schedule'].get('date')
+    contest_start = f"{_start_date} {config['schedule']['start_time'].replace('Z', '')}"
     duration_hours = config['schedule']['duration_hours']
+    region_term = config.get('region_term', 'County')
 
     # Derived paths
     repo_root = Path(__file__).parent.parent
@@ -150,13 +152,16 @@ def main():
 
     # Derive contest ISO timestamps (used by stats and animations)
     schedule = config['schedule']
-    contest_start_iso = f"{schedule['date']}T{schedule['start_time'].replace('Z', '')}"
+    _start_date = schedule.get('start_date') or schedule.get('date')
+    contest_start_iso = f"{_start_date}T{schedule['start_time'].replace('Z', '')}"
     end_date_offset = schedule.get('end_date_offset', 0)
-    if end_date_offset:
+    if schedule.get('end_date'):
+        end_date = schedule['end_date']
+    elif end_date_offset:
         from datetime import date, timedelta
-        end_date = (date.fromisoformat(schedule['date']) + timedelta(days=end_date_offset)).isoformat()
+        end_date = (date.fromisoformat(_start_date) + timedelta(days=end_date_offset)).isoformat()
     else:
-        end_date = schedule['date']
+        end_date = _start_date
     contest_end_iso = f"{end_date}T{schedule['end_time'].replace('Z', '')}"
 
     # 7. Generate contest stats
@@ -170,11 +175,14 @@ def main():
         '--contest-end', contest_end_iso,
         '--normalizations', normalizations_json,
         '--mobiles', mobiles_json,
+        '--host-state', config.get('host_state', 'NY'),
+        '--region-term', region_term,
     ], script_dir)
 
     # 8. Generate enhanced map
     print("\n[8/11] Generating enhanced county map...")
-    ny_boundaries = repo_root / 'reference' / 'ny_counties.json'
+    _boundaries_rel = config.get('boundaries', 'reference/ny_counties.json')
+    ny_boundaries = repo_root / _boundaries_rel
     run('generate_enhanced_map.py', [
         '--meta-db', meta_db,
         '--qso-db', qso_db,
@@ -191,7 +199,8 @@ def main():
         '--output', county_anim_html,
         '--contest-start', contest_start_iso,
         '--contest-end', contest_end_iso,
-        '--title', f'{contest_name} County Activity'
+        '--region-term', region_term,
+        '--title', f'{contest_name} {region_term} Activity'
     ], script_dir)
 
     # 10. Generate mobile animation
@@ -204,6 +213,7 @@ def main():
         '--output', mobile_anim_html,
         '--contest-start', contest_start_iso,
         '--contest-end', contest_end_iso,
+        '--region-term', region_term,
         '--title', f'{contest_name} Mobile Activity'
     ], script_dir)
 

@@ -166,7 +166,7 @@ def generate_state_breakdown(qso_db, host_counties=None, host_state='NY', contes
     return result
 
 
-def generate_contest_stats(meta_db, qso_db, contest_start, contest_end):
+def generate_contest_stats(meta_db, qso_db, contest_start, contest_end, host_state='NY'):
     """Generate summary statistics from the databases."""
     stats = {}
     meta_conn = sqlite3.connect(meta_db)
@@ -174,9 +174,9 @@ def generate_contest_stats(meta_db, qso_db, contest_start, contest_end):
     stats['total_logs'] = meta_conn.execute("SELECT COUNT(*) FROM stations").fetchone()[0]
     stats['unique_callsigns'] = meta_conn.execute("SELECT COUNT(DISTINCT callsign) FROM stations").fetchone()[0]
 
-    ny_count = meta_conn.execute("SELECT COUNT(*) FROM stations WHERE location = 'NY'").fetchone()[0]
-    stats['ny_stations'] = ny_count
-    stats['non_ny_stations'] = stats['total_logs'] - ny_count
+    host_count = meta_conn.execute("SELECT COUNT(*) FROM stations WHERE location = ?", (host_state,)).fetchone()[0]
+    stats['host_stations'] = host_count
+    stats['non_host_stations'] = stats['total_logs'] - host_count
 
     # Official overlay categories
     overlay_counts = {}
@@ -208,7 +208,7 @@ def generate_contest_stats(meta_db, qso_db, contest_start, contest_end):
             result[row[0]] = row[1]
         stats[key] = result
 
-    ny_callsigns = [row[0] for row in meta_conn.execute("SELECT callsign FROM stations WHERE location = 'NY'")]
+    host_callsigns = [row[0] for row in meta_conn.execute("SELECT callsign FROM stations WHERE location = ?", (host_state,))]
     meta_conn.close()
 
     start_db = contest_start.replace('T', ' ')
@@ -219,15 +219,15 @@ def generate_contest_stats(meta_db, qso_db, contest_start, contest_end):
         "SELECT COUNT(*) FROM valid_qsos WHERE datetime >= ? AND datetime <= ?",
         (start_db, end_db)
     ).fetchone()[0]
-    if ny_callsigns:
-        placeholders = ','.join('?' * len(ny_callsigns))
-        stats['qsos_by_ny'] = qso_conn.execute(
+    if host_callsigns:
+        placeholders = ','.join('?' * len(host_callsigns))
+        stats['qsos_by_host'] = qso_conn.execute(
             f"SELECT COUNT(*) FROM valid_qsos WHERE datetime >= ? AND datetime <= ? "
             f"AND station_call IN ({placeholders})",
-            (start_db, end_db, *ny_callsigns)
+            (start_db, end_db, *host_callsigns)
         ).fetchone()[0]
     else:
-        stats['qsos_by_ny'] = 0
+        stats['qsos_by_host'] = 0
 
     # Filtered QSOs for audit — structural failures + out-of-window
     rows = qso_conn.execute("""
@@ -423,7 +423,7 @@ def _grouped_state_table(state_breakdown):
     return html
 
 
-def format_stats_html(stats, contest_name):
+def format_stats_html(stats, contest_name, region_term='County'):
     """Format stats as an HTML fragment."""
 
     def section(title, items):
@@ -439,13 +439,13 @@ def format_stats_html(stats, contest_name):
     html += section("Participation", {
         "Total Logs Submitted": stats['total_logs'],
         "Unique Callsigns": stats['unique_callsigns'],
-        "Host-State Stations": stats['ny_stations'],
-        "Non-Host-State Stations": stats['non_ny_stations'],
+        "Host-State Stations": stats['host_stations'],
+        "Non-Host-State Stations": stats['non_host_stations'],
     })
 
     html += section("QSO Activity", {
         "Total QSO Records": stats['total_qsos'],
-        "QSO Records by Host-State Stations": stats['qsos_by_ny'],
+        "QSO Records by Host-State Stations": stats['qsos_by_host'],
     })
 
     if stats.get('official_overlays'):
@@ -460,12 +460,9 @@ def format_stats_html(stats, contest_name):
         html += section("Power Levels", stats['power_levels'])
 
     if stats.get('county_breakdown'):
-        def county_label(abbrev):
-            name = NY_COUNTY_NAMES.get(abbrev, abbrev)
-            return f"{abbrev} – {name}"
         html += _mode_breakdown_table(
-            "QSOs by Host-State County", stats['county_breakdown'],
-            label_col="County", label_fn=county_label
+            f"QSOs by Host-State {region_term}", stats['county_breakdown'],
+            label_col=region_term, label_fn=lambda abbrev: abbrev
         )
 
     if stats.get('state_breakdown'):
@@ -497,8 +494,8 @@ def _filtered_qsos_table(filtered_qsos):
         f'<table class="audit-table"><thead><tr>'
         f'<th>Log File</th><th>Station</th><th>Datetime</th>'
         f'<th>Freq</th><th>Mode</th>'
-        f'<th>Tx Call</th><th>Tx County</th>'
-        f'<th>Rx Call</th><th>Rx County</th>'
+        f'<th>Tx Call</th><th>Tx {region_term}</th>'
+        f'<th>Rx Call</th><th>Rx {region_term}</th>'
         f'<th>Reason</th>'
         f'</tr></thead><tbody>'
     )
@@ -523,7 +520,7 @@ def _filtered_qsos_table(filtered_qsos):
     return css + hdr + body + '</tbody></table></div>\n'
 
 
-def build_mobile_discrepancies(meta_db, qso_db, mobiles_json, min_counties=2, min_qsos=10):
+def build_mobile_discrepancies(meta_db, qso_db, mobiles_json, host_state='NY', min_counties=2, min_qsos=10):
     """Return list of stations that declared MOBILE but didn't qualify for the animation map."""
     import sqlite3 as _sq
     map_calls = set()
@@ -550,8 +547,8 @@ def build_mobile_discrepancies(meta_db, qso_db, mobiles_json, min_counties=2, mi
             "SELECT COUNT(*) FROM valid_qsos WHERE station_call=?", (call,)
         ).fetchone()[0]
         reasons = []
-        if location and location not in ('NY',):
-            reasons.append(f"non-NY location ({location})")
+        if location and location not in (host_state,):
+            reasons.append(f"non-{host_state} location ({location})")
         if len(counties) < min_counties:
             reasons.append(f"only {len(counties)} county — below min {min_counties}")
         if n_qsos < min_qsos:
@@ -569,7 +566,7 @@ def build_mobile_discrepancies(meta_db, qso_db, mobiles_json, min_counties=2, mi
     return discrepancies
 
 
-def format_errata_html(filtered_qsos, normalizations, mobile_discrepancies, contest_name):
+def format_errata_html(filtered_qsos, normalizations, mobile_discrepancies, contest_name, region_term='County'):
     """Render a standalone errata HTML page."""
     now = datetime.now().astimezone()
     generated = now.strftime('%Y-%m-%d %H:%M ') + now.strftime('%Z')
@@ -627,9 +624,9 @@ and validation rules applied uniformly to all logs.</p>
         html += (
             '<p>These stations declared <code>CATEGORY-STATION: MOBILE</code> in their log header '
             'but did not qualify for the mobile animation map. Qualification requires operating '
-            f'from at least {2} NY counties with at least {10} total QSOs.</p>'
+            f'from at least {2} host regions with at least {10} total QSOs.</p>'
             '<table class="norm-table"><thead><tr>'
-            '<th>Callsign</th><th>Location</th><th>Counties Operated</th><th>QSOs</th><th>Reason</th>'
+            f'<th>Callsign</th><th>Location</th><th>{region_term}s Operated</th><th>QSOs</th><th>Reason</th>'
             '</tr></thead><tbody>'
         )
         for d in mobile_discrepancies:
@@ -650,7 +647,7 @@ and validation rules applied uniformly to all logs.</p>
     if filtered_qsos:
         html += (
             '<p>The following QSO records were excluded from all statistics. '
-            'Common causes: county exchange contains a slash (county-line notation logged '
+            f'Common causes: {region_term.lower()} exchange contains a slash ({region_term.lower()}-line notation logged '
             'in the exchange field), exchange code too short or too long, or timestamp '
             'outside the official contest window.</p>'
             '<table class="audit-table"><thead><tr>'
@@ -694,6 +691,8 @@ def main():
     parser.add_argument('--contest-end',   required=True, help='Contest end UTC (e.g. "2025-10-19T02:00:00")')
     parser.add_argument('--normalizations', default=None, help='Path to callsign_normalizations.json')
     parser.add_argument('--mobiles', default=None, help='Path to mobile_stations.json')
+    parser.add_argument('--host-state', default='NY', help='Host state/province abbreviation (e.g. NY, BC)')
+    parser.add_argument('--region-term', default='County', help='Display term for host regions (e.g. County, District, Parish)')
     args = parser.parse_args()
 
     contest_start = args.contest_start.replace('T', ' ')
@@ -702,9 +701,9 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    stats = generate_contest_stats(args.meta_db, args.qso_db, contest_start, contest_end)
+    stats = generate_contest_stats(args.meta_db, args.qso_db, contest_start, contest_end, host_state=args.host_state)
     stats['county_breakdown'] = generate_county_breakdown(args.qso_db, contest_start=contest_start, contest_end=contest_end)
-    stats['state_breakdown']  = generate_state_breakdown(args.qso_db, contest_start=contest_start, contest_end=contest_end)
+    stats['state_breakdown']  = generate_state_breakdown(args.qso_db, host_state=args.host_state, contest_start=contest_start, contest_end=contest_end)
 
     json_path = output_dir / 'contest_stats.json'
     with open(json_path, 'w') as f:
@@ -713,7 +712,7 @@ def main():
 
     html_path = output_dir / 'contest_stats.html'
     with open(html_path, 'w') as f:
-        f.write(format_stats_html(stats, args.contest_name))
+        f.write(format_stats_html(stats, args.contest_name, region_term=args.region_term))
     print(f"Saved {html_path}")
 
     normalizations = []
@@ -722,18 +721,18 @@ def main():
             normalizations = json.load(f)
 
     mobile_discrepancies = build_mobile_discrepancies(
-        args.meta_db, args.qso_db, args.mobiles)
+        args.meta_db, args.qso_db, args.mobiles, host_state=args.host_state)
 
     errata_path = output_dir / 'errata.html'
     with open(errata_path, 'w') as f:
         f.write(format_errata_html(
             stats.get('filtered_qsos', []), normalizations,
-            mobile_discrepancies, args.contest_name))
+            mobile_discrepancies, args.contest_name, region_term=args.region_term))
     print(f"Saved {errata_path}")
 
     print(f"Total Logs: {stats['total_logs']}")
-    print(f"Host-State Stations: {stats['ny_stations']}")
-    print(f"Non-Host-State Stations: {stats['non_ny_stations']}")
+    print(f"Host-State Stations: {stats['host_stations']}")
+    print(f"Non-Host-State Stations: {stats['non_host_stations']}")
     print(f"Total QSOs: {stats['total_qsos']:,}")
 
 

@@ -4,9 +4,11 @@
   "abbreviation": "NYQP",
   "year": 2025,
   "host_state": "NY",
+  "region_term": "County",
   "schedule": {
-    "date": "2025-10-18",
+    "start_date": "2025-10-18",
     "start_time": "14:00:00Z",
+    "end_date": "2025-10-19",
     "end_time": "02:00:00Z",
     "end_date_offset": 1,
     "duration_hours": 12

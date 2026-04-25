@@ -300,10 +300,23 @@ def main():
     parser.add_argument('--about', default=MAP_ABOUT, help='About panel text')
     args = parser.parse_args()
 
-    name_map = DEFAULT_NAME_MAP
     if args.name_map:
         with open(args.name_map, 'r') as f:
             name_map = json.load(f)
+    else:
+        # Derive name_map from GeoJSON boundaries (NAME -> COUNTY code)
+        try:
+            with open(args.boundaries, 'r') as f:
+                bdata = json.load(f)
+            name_map = {
+                feat['properties']['NAME']: feat['properties']['COUNTY']
+                for feat in bdata['features']
+                if 'NAME' in feat['properties'] and 'COUNTY' in feat['properties']
+            }
+            if not name_map:
+                name_map = DEFAULT_NAME_MAP
+        except Exception:
+            name_map = DEFAULT_NAME_MAP
 
     valid_counties = set(name_map.values())
 

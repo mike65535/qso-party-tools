@@ -42,19 +42,30 @@ DEFAULT_ICONS = {
 }
 
 
-MOBILE_ABOUT = (
-    "This animation shows mobile station movement and activity across NY counties during the contest. "
-    "Mobile stations are automatically detected by identifying stations that logged QSOs from multiple NY counties. "
-    "Markers show each mobile's estimated position based on their logged county sequence; "
-    "stations operating on a county line are shown midway between those two counties. "
-    "County shading reflects cumulative mobile QSOs in that county, using the same color scale throughout."
-)
+MOBILE_ABOUT = None  # Auto-generated from region_term; see generate_mobile_animation()
 
 def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                                boundaries_file, output_file,
-                               contest_start, contest_end, title, about_text=MOBILE_ABOUT):
+                               contest_start, contest_end, title, region_term="County", about_text=None):
+    if about_text is None:
+        rt = region_term.lower()
+        about_text = (
+            f"This animation shows mobile station movement and activity across {rt}s during the contest. "
+            f"Mobile stations are automatically detected by identifying stations that logged QSOs from multiple {rt}s. "
+            f"Markers show each mobile's estimated position based on their logged {rt} sequence; "
+            f"stations operating on a {rt} line are shown midway between those two {rt}s. "
+            f"{region_term} shading reflects cumulative mobile QSOs in that {rt}, using the same color scale throughout."
+        )
+
     with open(boundaries_file, 'r') as f:
         boundaries_data = json.load(f)
+
+    # Build region name lookup from GeoJSON (COUNTY code -> NAME)
+    region_names = {
+        f['properties']['COUNTY']: f['properties']['NAME']
+        for f in boundaries_data['features']
+        if 'COUNTY' in f['properties'] and 'NAME' in f['properties']
+    }
 
     with open(county_line_json, 'r') as f:
         county_line_periods = json.load(f)
@@ -129,14 +140,14 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
             </div>
         </div>
         <div class="bottom-info">
-            <span id="statusDisplay">{title} | QSOs: 0 | Counties Covered: 0</span>
+            <span id="statusDisplay">{title} | QSOs: 0 | {region_term}s Covered: 0</span>
         </div>
     </div>
 
     <script>
         const mobileData = {json.dumps(mobile_data, indent=8)};
         const countyLinePeriods = {json.dumps(county_line_periods, indent=8)};
-        const countyNames = {json.dumps(NY_COUNTY_NAMES, indent=8)};
+        const regionNames = {json.dumps(region_names, indent=8)};
         const mobileIcons = {json.dumps(mobile_icons, indent=8)};
         const boundariesData = {json.dumps(boundaries_data)};
 
@@ -145,17 +156,17 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
         const startTime = new Date('{contest_start}Z');
         const endTime = new Date('{contest_end}Z');
         const firstHourEnd = new Date(startTime.getTime() + 60 * 60 * 1000);
-        const countyCoords = {{}};
-        let countyLayer;
+        const regionCoords = {{}};
+        let regionLayer;
 
         const speedMultipliers = [1, 2, 5, 10, 20, 50];
         let speedIdx = 0;
         let speedMultiplier = speedMultipliers[speedIdx];
 
 
-        function getCountyAbbrev(fullName) {{
-            for (const [abbrev, name] of Object.entries(countyNames)) {{
-                if (name === fullName + " County") return abbrev;
+        function getRegionAbbrev(fullName) {{
+            for (const [abbrev, name] of Object.entries(regionNames)) {{
+                if (name === fullName) return abbrev;
             }}
             return fullName.substring(0, 3).toUpperCase();
         }}
@@ -194,8 +205,8 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
             for (const period of periods) {{
                 const ps = new Date(period.start_time + 'Z'), pe = new Date(period.end_time + 'Z');
                 if (time >= ps && time <= pe) {{
-                    const c1 = countyCoords[countyNames[period.counties[0]]] || [42.9, -75.5];
-                    const c2 = countyCoords[countyNames[period.counties[1]]] || [42.9, -75.5];
+                    const c1 = regionCoords[regionNames[period.counties[0]]] || [0, 0];
+                    const c2 = regionCoords[regionNames[period.counties[1]]] || [0, 0];
                     return [(c1[0]+c2[0])/2, (c1[1]+c2[1])/2];
                 }}
             }}
@@ -203,8 +214,8 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                 let last = null;
                 for (const p of periods) {{ if (time >= new Date(p.start_time + 'Z')) last = p; }}
                 if (last) {{
-                    const c1 = countyCoords[countyNames[last.counties[0]]] || [42.9, -75.5];
-                    const c2 = countyCoords[countyNames[last.counties[1]]] || [42.9, -75.5];
+                    const c1 = regionCoords[regionNames[last.counties[0]]] || [0, 0];
+                    const c2 = regionCoords[regionNames[last.counties[1]]] || [0, 0];
                     return [(c1[0]+c2[0])/2, (c1[1]+c2[1])/2];
                 }}
             }}
@@ -213,11 +224,11 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
             for (const q of qsos) {{ if (new Date(q.timestamp + 'Z') <= time) county = q.county; else break; }}
             if (!county && qsos.length > 0) county = qsos[0].county;
             if (county) {{
-                const base = countyCoords[countyNames[county]] || [42.9, -75.5];
+                const base = regionCoords[regionNames[county]] || [0, 0];
                 const idx = Object.keys(mobileData).indexOf(callsign);
                 return [base[0] + (idx%3-1)*0.05, base[1] + (Math.floor(idx/3)%3-1)*0.05];
             }}
-            return [42.9, -75.5];
+            return [0, 0];
         }}
 
         function isOnCountyLine(callsign, time) {{
@@ -229,44 +240,54 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
         }}
 
         function initMap() {{
-            map = L.map('map', {{ zoomDelta: 0.25, zoomSnap: 0.25 }}).setView([43.0, -76.0], 7);
+            map = L.map('map', {{ zoomDelta: 0.25, zoomSnap: 0.25 }}).setView([0, 0], 2);
 
-            const allFeatures = boundariesData.features;
-            let merged = allFeatures[0];
-            for (let i = 1; i < allFeatures.length; i++) {{
-                try {{ merged = turf.union(merged, allFeatures[i]); }}
-                catch(e) {{ console.log('Union failed', i); }}
-            }}
-
-            countyLayer = L.geoJSON(boundariesData, {{
+            // Add county layer first so map always renders even if Turf fails
+            regionLayer = L.geoJSON(boundariesData, {{
                 style: () => ({{ fillColor: '#e8e8e8', weight: 0.5, opacity: 0.8, color: '#666', fillOpacity: 0.7 }}),
                 onEachFeature: function(feature, layer) {{
                     const name = feature.properties.NAME;
-                    layer.countyName = name;
-                    layer.countyAbbrev = getCountyAbbrev(name);
-                    layer.bindPopup(`<b>${{layer.countyAbbrev}}</b><br>${{name}} County<br>Mobile QSOs: 0`);
+                    layer.regionName = name;
+                    layer.regionAbbrev = feature.properties.COUNTY || getRegionAbbrev(name);
+                    layer.bindPopup(`<b>${{layer.regionAbbrev}}</b><br>${{name}}<br>Mobile QSOs: 0`);
                 }}
             }}).addTo(map);
 
-            if (merged) {{
-                try {{
-                    const mask = turf.difference(turf.bboxPolygon([-180,-90,180,90]), merged);
-                    if (mask) L.geoJSON(mask, {{
-                        style: {{ fillColor:'white', fillOpacity:1, weight:0, stroke:false }},
-                        interactive: false, pane:'overlayPane'
-                    }}).addTo(map);
-                }} catch(e) {{}}
-                L.geoJSON(merged, {{
-                    style: {{ fillColor:'transparent', weight:3, opacity:1, color:'#1a252f', fillOpacity:0 }},
-                    interactive: false
-                }}).addTo(map);
-            }}
+            map.fitBounds(regionLayer.getBounds());
 
+            // Precompute region centers
             boundariesData.features.forEach(feature => {{
-                const name = feature.properties.NAME;
-                const pt = turf.centerOfMass(feature);
-                countyCoords[name + " County"] = [pt.geometry.coordinates[1], pt.geometry.coordinates[0]];
+                try {{
+                    const name = feature.properties.NAME;
+                    const pt = turf.centerOfMass(feature);
+                    regionCoords[name] = [pt.geometry.coordinates[1], pt.geometry.coordinates[0]];
+                }} catch(e) {{ /* skip */ }}
             }});
+
+            // Turf union for mask/outline — fully optional
+            try {{
+                const allFeatures = boundariesData.features;
+                let merged = allFeatures[0];
+                for (let i = 1; i < allFeatures.length; i++) {{
+                    try {{
+                        const u = turf.union(merged, allFeatures[i]);
+                        if (u) merged = u;
+                    }} catch(e) {{ /* skip */ }}
+                }}
+                if (merged) {{
+                    try {{
+                        const mask = turf.difference(turf.bboxPolygon([-180,-90,180,90]), merged);
+                        if (mask) L.geoJSON(mask, {{
+                            style: {{ fillColor:'white', fillOpacity:1, weight:0, stroke:false }},
+                            interactive: false, pane:'overlayPane'
+                        }}).addTo(map);
+                    }} catch(e) {{}}
+                    L.geoJSON(merged, {{
+                        style: {{ fillColor:'transparent', weight:3, opacity:1, color:'#1a252f', fillOpacity:0 }},
+                        interactive: false
+                    }}).addTo(map);
+                }}
+            }} catch(e) {{ console.log('Turf outline skipped:', e); }}
 
             // Create mobile markers
             for (const [call, qsos] of Object.entries(mobileData)) {{
@@ -292,9 +313,9 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
             const progress = Math.max(0, Math.min(100, (currentTime-startTime)/(endTime-startTime)*100));
             document.getElementById('progressBar').style.width = progress + '%';
 
-            const countyQSOs = {{}};
+            const regionQSOs = {{}};
             let totalQSOs = 0;
-            const countiesCovered = new Set();
+            const regionsCovered = new Set();
 
             for (const [call, qsos] of Object.entries(mobileData)) {{
                 const marker = mobileMarkers[call];
@@ -311,7 +332,7 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                     const det = isOnCountyLine(call, currentTime);
                     const countyDisplay = det.isCountyLine ? det.counties.join('/') : currentQSO.county;
                     const qsoCount = qsos.filter(q => new Date(q.timestamp+'Z') < currentTime).length;
-                    marker.getPopup().setContent(`<b>${{call}}</b><br>County: ${{countyDisplay}}<br>QSOs: ${{qsoCount}}`);
+                    marker.getPopup().setContent(`<b>${{call}}</b><br>{region_term}: ${{countyDisplay}}<br>QSOs: ${{qsoCount}}`);
                 }} else {{
                     // No QSO yet — show first-hour starters at their starting position
                     // until their first QSO arrives; late starters stay hidden until then
@@ -319,7 +340,7 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                     if (firstQsoTime && firstQsoTime <= firstHourEnd) {{
                         marker.setLatLng(getStationCoords(call, startTime));
                         marker.setOpacity(1);
-                        marker.getPopup().setContent(`<b>${{call}}</b><br>Starting county: ${{qsos[0].county}}<br>Ready to go!`);
+                        marker.getPopup().setContent(`<b>${{call}}</b><br>Starting {region_term.lower()}: ${{qsos[0].county}}<br>Ready to go!`);
                     }} else {{
                         marker.setOpacity(0);
                     }}
@@ -329,24 +350,24 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
             Object.values(mobileData).forEach(qsos => {{
                 qsos.forEach(q => {{
                     if (new Date(q.timestamp+'Z') < currentTime) {{
-                        const fullName = countyNames[q.county];
-                        if (fullName) {{ countyQSOs[fullName] = (countyQSOs[fullName]||0)+1; countiesCovered.add(q.county); totalQSOs++; }}
+                        const fullName = regionNames[q.county];
+                        if (fullName) {{ regionQSOs[fullName] = (regionQSOs[fullName]||0)+1; regionsCovered.add(q.county); totalQSOs++; }}
                     }}
                 }});
             }});
 
-            const maxQSOs = Math.max(0, ...Object.values(countyQSOs));
+            const maxQSOs = Math.max(0, ...Object.values(regionQSOs));
             updateLegend(maxQSOs);
 
-            countyLayer.eachLayer(layer => {{
-                const fullName = layer.countyName + " County";
-                const qsoCount = countyQSOs[fullName] || 0;
+            regionLayer.eachLayer(layer => {{
+                const fullName = layer.regionName;
+                const qsoCount = regionQSOs[fullName] || 0;
                 layer.setStyle({{ fillColor: getCountyColor(qsoCount, maxQSOs) }});
-                layer.getPopup().setContent(`<b>${{layer.countyAbbrev}}</b><br>${{layer.countyName}} County<br>Mobile QSOs: ${{qsoCount}}`);
+                layer.getPopup().setContent(`<b>${{layer.regionAbbrev}}</b><br>${{layer.regionName}}<br>Mobile QSOs: ${{qsoCount}}`);
             }});
 
             document.getElementById('statusDisplay').textContent =
-                `{title} | QSOs: ${{totalQSOs}} | Counties Covered: ${{countiesCovered.size}}`;
+                `{title} | QSOs: ${{totalQSOs}} | {region_term}s Covered: ${{regionsCovered.size}}`;
         }}
 
         function togglePlay() {{
@@ -416,13 +437,15 @@ def main():
     parser.add_argument('--contest-end', required=True,
                         help='Contest end UTC (e.g. "2025-10-19T02:00:00")')
     parser.add_argument('--title', default='Mobile Station Activity Animation')
-    parser.add_argument('--about', default=MOBILE_ABOUT, help='About panel text')
+    parser.add_argument('--region-term', default='County', help='Term for host regions (e.g. County, District, Parish)')
+    parser.add_argument('--about', default=None, help='About panel text (default: auto-generated from region-term)')
     args = parser.parse_args()
 
     generate_mobile_animation(
         args.db, args.mobiles, args.county_line_periods,
         args.boundaries, args.output,
-        args.contest_start, args.contest_end, args.title, args.about
+        args.contest_start, args.contest_end, args.title,
+        region_term=args.region_term, about_text=args.about
     )
 
 
