@@ -14,8 +14,13 @@ import os
 import sqlite3
 from pathlib import Path
 
+import matplotlib
+matplotlib.use('Agg')
+
 from PIL import Image
 from wordcloud import WordCloud
+
+FONT_PATH = '/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf'
 
 
 def _embed_image(path):
@@ -131,6 +136,7 @@ def make_wordcloud(freq, color, output_path, width=800, height=500):
         prefer_horizontal=0.85,
         min_font_size=12,
         max_words=MAX_WORDS,
+        font_path=FONT_PATH,
     ).generate_from_frequencies(top)
     wc.to_file(str(output_path))
     print(f"  Saved {output_path.name} ({len(top)} callsigns)")
