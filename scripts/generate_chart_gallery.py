@@ -21,37 +21,39 @@ BAND_FRAGMENTS = [
 ]
 ALLBANDS_FRAGMENTS = ['allbands_cw', 'allbands_ph']
 
-# Human-readable metadata keyed by filename fragment (case-insensitive match)
-CHART_META = {
-    'boxplotofscorebycat':        ('QSO Count by Category',
-        'Distribution of QSO counts across contest categories (operator type, power, mode, station type).'),
-    'distributionofqsos':         ('QSOs by Location & Mode',
-        'Breakdown of QSO activity between NY and non-NY stations, split by CW and Phone modes.'),
-    'histogramofqso':             ('QSO Totals Distribution',
-        'How many stations achieved different QSO count levels during the contest.'),
-    'band_activity_composite':    ('Band Activity — All Bands',
-        'Per-band QSO activity over the contest period (160m–10m) — click to explore all bands.'),
-    '160m_activity':              ('160m Band Activity',
-        'QSO activity over time on 160 meters, CW and Phone.'),
-    '80m_activity':               ('80m Band Activity',
-        'QSO activity over time on 80 meters, CW and Phone.'),
-    '40m_activity':               ('40m Band Activity',
-        'QSO activity over time on 40 meters, CW and Phone.'),
-    '20m_activity':               ('20m Band Activity',
-        'QSO activity over time on 20 meters, CW and Phone.'),
-    '15m_activity':               ('15m Band Activity',
-        'QSO activity over time on 15 meters, CW and Phone.'),
-    '10m_activity':               ('10m Band Activity',
-        'QSO activity over time on 10 meters, CW and Phone.'),
-    'allbands_cw':                ('All Bands — CW Mode',
-        'Stacked view of CW activity across all HF bands (160m–10m) over the contest period.'),
-    'allbands_ph':                ('All Bands — Phone Mode',
-        'Stacked view of Phone activity across all HF bands (160m–10m) over the contest period.'),
-    'wordcloud_composite_instate':  ('NY In-State Callsign Clouds',
-        'Top NY callsigns by category (Mobile, Phone, Mixed, CW × power level) — click to explore.'),
-    'wordcloud_composite_outstate': ('Out-of-State & DX Callsign Clouds',
-        'Top out-of-state and DX callsigns by category — click to explore.'),
-}
+def _build_chart_meta(host_type='State'):
+    ht  = host_type
+    htl = host_type.lower()
+    return {
+        'boxplotofscorebycat':        ('QSO Count by Category',
+            'Distribution of QSO counts across contest categories (operator type, power, mode, station type).'),
+        'distributionofqsos':         ('QSOs by Location & Mode',
+            f'Breakdown of QSO activity between in-{htl} and out-of-{htl} stations, split by CW and Phone modes.'),
+        'histogramofqso':             ('QSO Totals Distribution',
+            'How many stations achieved different QSO count levels during the contest.'),
+        'band_activity_composite':    ('Band Activity — All Bands',
+            'Per-band QSO activity over the contest period (160m–10m) — click to explore all bands.'),
+        '160m_activity':              ('160m Band Activity',
+            'QSO activity over time on 160 meters, CW and Phone.'),
+        '80m_activity':               ('80m Band Activity',
+            'QSO activity over time on 80 meters, CW and Phone.'),
+        '40m_activity':               ('40m Band Activity',
+            'QSO activity over time on 40 meters, CW and Phone.'),
+        '20m_activity':               ('20m Band Activity',
+            'QSO activity over time on 20 meters, CW and Phone.'),
+        '15m_activity':               ('15m Band Activity',
+            'QSO activity over time on 15 meters, CW and Phone.'),
+        '10m_activity':               ('10m Band Activity',
+            'QSO activity over time on 10 meters, CW and Phone.'),
+        'allbands_cw':                ('All Bands — CW Mode',
+            'Stacked view of CW activity across all HF bands (160m–10m) over the contest period.'),
+        'allbands_ph':                ('All Bands — Phone Mode',
+            'Stacked view of Phone activity across all HF bands (160m–10m) over the contest period.'),
+        'wordcloud_composite_instate':  (f'In-{ht} Callsign Clouds',
+            f'Top in-{htl} callsigns by category (Mobile, Phone, Mixed, CW × power level) — click to explore.'),
+        'wordcloud_composite_outstate': (f'Out-of-{ht} & DX Callsign Clouds',
+            f'Top out-of-{htl} and DX callsigns by category — click to explore.'),
+    }
 
 # Thumbnails that link to a sibling HTML page instead of opening the full PNG.
 # Key: filename fragment; Value: HTML filename suffix appended to contest prefix.
@@ -141,9 +143,9 @@ def _embed_image(path):
         return ''
 
 
-def _chart_meta(filename):
+def _chart_meta(filename, chart_meta):
     lower = filename.lower()
-    for key, meta in CHART_META.items():
+    for key, meta in chart_meta.items():
         if key in lower:
             return meta
     stem = Path(filename).stem
@@ -218,7 +220,7 @@ def make_band_composite(charts_dir):
 
 # ── HTML generation ──────────────────────────────────────────────────────────
 
-def _build_items(chart_files, thumbs_dir):
+def _build_items(chart_files, thumbs_dir, chart_meta):
     """Return (items_html, charts_js_array_literal).
 
     PNG charts go into a CHARTS[] array for the lightbox.
@@ -228,7 +230,7 @@ def _build_items(chart_files, thumbs_dir):
     item_blocks = []
 
     for chart_path in chart_files:
-        title, desc = _chart_meta(chart_path.name)
+        title, desc = _chart_meta(chart_path.name, chart_meta)
         thumb_path  = thumbs_dir / f"thumb_{chart_path.name}"
         thumb_b64   = _embed_image(thumb_path)
         html_target = _html_override(chart_path.name)
@@ -255,8 +257,8 @@ def _build_items(chart_files, thumbs_dir):
     return '\n'.join(item_blocks), charts_js
 
 
-def generate_gallery_html(chart_files, thumbs_dir, contest_name):
-    items_html, charts_js = _build_items(chart_files, thumbs_dir)
+def generate_gallery_html(chart_files, thumbs_dir, contest_name, host_type='State'):
+    items_html, charts_js = _build_items(chart_files, thumbs_dir, _build_chart_meta(host_type))
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -279,8 +281,10 @@ def generate_gallery_html(chart_files, thumbs_dir, contest_name):
 </html>'''
 
 
-def generate_band_subpage_html(charts_dir, thumbs_dir, gallery_html_name, contest_name):
+def generate_band_subpage_html(charts_dir, thumbs_dir, gallery_html_name, contest_name,
+                               host_type='State'):
     """Self-contained band sub-page; gallery_html_name is just the filename (same dir)."""
+    chart_meta = _build_chart_meta(host_type)
     band_files = []
     for frag in BAND_FRAGMENTS + ALLBANDS_FRAGMENTS:
         matches = sorted(f for f in charts_dir.glob('*.png') if frag in f.name.lower())
@@ -293,7 +297,7 @@ def generate_band_subpage_html(charts_dir, thumbs_dir, gallery_html_name, contes
 
     items_html = ''
     for i, chart_path in enumerate(band_files):
-        title, desc = _chart_meta(chart_path.name)
+        title, desc = _chart_meta(chart_path.name, chart_meta)
         thumb_b64   = _embed_image(thumbs_dir / f"thumb_{chart_path.name}")
         items_html += f'''
         <div class="chart-item">
@@ -331,6 +335,7 @@ def main():
     parser.add_argument('--charts-dir',   required=True)
     parser.add_argument('--output-html',  required=True)
     parser.add_argument('--contest-name', default='Contest')
+    parser.add_argument('--host-type',    default='State', help='Term for the host jurisdiction (e.g. State, Province)')
     parser.add_argument('--thumb-width',  type=int, default=300)
     parser.add_argument('--thumb-height', type=int, default=200)
     args = parser.parse_args()
@@ -354,7 +359,8 @@ def main():
         band_subpage.parent.mkdir(parents=True, exist_ok=True)
         with open(band_subpage, 'w') as f:
             f.write(generate_band_subpage_html(
-                charts_dir, thumbs_dir, html_path.name, args.contest_name
+                charts_dir, thumbs_dir, html_path.name, args.contest_name,
+                host_type=args.host_type,
             ))
         print(f"  Band sub-page: {band_subpage}")
 
@@ -376,7 +382,7 @@ def main():
     print("Generating gallery HTML...")
     html_path.parent.mkdir(parents=True, exist_ok=True)
     with open(html_path, 'w') as f:
-        f.write(generate_gallery_html(chart_files, thumbs_dir, args.contest_name))
+        f.write(generate_gallery_html(chart_files, thumbs_dir, args.contest_name, args.host_type))
     print(f"Gallery saved to {html_path}")
 
 

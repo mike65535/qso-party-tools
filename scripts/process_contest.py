@@ -56,6 +56,7 @@ def main():
     contest_start = f"{_start_date} {config['schedule']['start_time'].replace('Z', '')}"
     duration_hours = config['schedule']['duration_hours']
     region_term = config.get('region_term', 'County')
+    host_type   = config.get('host_type', 'State')
 
     # Derived paths
     repo_root = Path(__file__).parent.parent
@@ -124,7 +125,8 @@ def main():
         '--output-dir', charts_dir,
         '--contest-id', contest_id.upper().replace('-', '_'),
         '--contest-start', contest_start,
-        '--duration-hours', duration_hours
+        '--duration-hours', duration_hours,
+        '--host-state', config.get('host_state', 'NY'),
     ], script_dir)
 
     # 6. Generate chart thumbnails and gallery HTML
@@ -134,6 +136,7 @@ def main():
         '--charts-dir', charts_dir,
         '--output-html', gallery_html,
         '--contest-name', contest_name,
+        '--host-type', config.get('host_type', 'State'),
     ], script_dir)
 
     # 6b. Generate callsign word clouds
@@ -148,6 +151,8 @@ def main():
         '--output-html-outstate', wordcloud_outstate_html,
         '--contest-name', contest_name,
         '--contest-id', contest_id.upper().replace('-', '_'),
+        '--host-state', config.get('host_state', 'NY'),
+        '--host-type',  config.get('host_type', 'State'),
     ], script_dir)
 
     # Derive contest ISO timestamps (used by stats and animations)
@@ -164,6 +169,10 @@ def main():
         end_date = _start_date
     contest_end_iso = f"{end_date}T{schedule['end_time'].replace('Z', '')}"
 
+    # Boundaries file (used by stats and all map/animation scripts)
+    _boundaries_rel = config.get('boundaries', 'reference/ny_counties.json')
+    ny_boundaries = repo_root / _boundaries_rel
+
     # 7. Generate contest stats
     print("\n[7/11] Generating contest statistics...")
     run('generate_stats.py', [
@@ -177,12 +186,11 @@ def main():
         '--mobiles', mobiles_json,
         '--host-state', config.get('host_state', 'NY'),
         '--region-term', region_term,
+        '--boundaries', ny_boundaries,
     ], script_dir)
 
     # 8. Generate enhanced map
     print("\n[8/11] Generating enhanced county map...")
-    _boundaries_rel = config.get('boundaries', 'reference/ny_counties.json')
-    ny_boundaries = repo_root / _boundaries_rel
     run('generate_enhanced_map.py', [
         '--meta-db', meta_db,
         '--qso-db', qso_db,
@@ -214,6 +222,7 @@ def main():
         '--contest-start', contest_start_iso,
         '--contest-end', contest_end_iso,
         '--region-term', region_term,
+        '--host-type', host_type,
         '--title', f'{contest_name} Mobile Activity'
     ], script_dir)
 
@@ -226,13 +235,15 @@ def main():
             '--output', state_anim_json,
             '--contest-start', contest_start.replace('T', ' '),
             '--contest-end', contest_end_iso.replace('T', ' '),
-            '--host-state', config.get('host_state', 'NY')
+            '--host-state', config.get('host_state', 'NY'),
+            '--boundaries', ny_boundaries,
         ], script_dir)
         run('generate_state_animation_html.py', [
             '--animation-data', state_anim_json,
             '--boundaries', us_boundaries,
             '--output', state_anim_html,
             '--host-state', config.get('host_state', 'NY'),
+            '--host-type',  config.get('host_type', 'State'),
             '--contest-name', contest_name
         ], script_dir)
     else:
@@ -250,6 +261,10 @@ def main():
         '--contest-id',   contest_id,
         '--meta-db',      meta_db,
         '--qso-db',       qso_db,
+        '--host-state',   config.get('host_state', 'NY'),
+        '--host-type',    config.get('host_type', 'State'),
+        '--region-term',  region_term,
+        '--mobiles',      mobiles_json,
     ]
     if dx_countries:
         run_args += ['--dx-countries', dx_countries]

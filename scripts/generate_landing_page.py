@@ -25,56 +25,68 @@ def _embed_image(path):
         return ''
 
 
-# ---------------------------------------------------------------------------
-# Tool card definitions: (title, description, html_suffix, banner_color)
-# html_suffix is appended to contest_id (lower) to form the filename.
-# Card is omitted if the file doesn't exist.
-# ---------------------------------------------------------------------------
-TOOL_CARDS = [
-    ('County Activity Animation',
-     'Watch QSO activity build across all 62 NY counties hour by hour '
-     'as the contest unfolds.',
-     '_county_animation.html',
-     '#2c7bb6'),
-    ('Mobile Station Activity',
-     'Follow each mobile station across the map as it activates counties '
-     'throughout the contest period.',
-     '_mobile_animation.html',
-     '#c0392b'),
-    ('US and Canada Activity',
-     'See how participation from every state and Canadian province '
-     'grew over the contest period.',
-     '_state_animation.html',
-     '#1a9850'),
-    ('NY County Map',
-     'Choropleth map of total QSO counts by NY county for all '
-     'log-submitting stations.',
-     '_enhanced_map.html',
-     '#6c3483'),
-]
+def _has_mobiles(mobiles_json):
+    """Return True if any mobile stations appear in the mobiles JSON."""
+    if not mobiles_json:
+        return True   # unknown — assume yes so card description stays positive
+    try:
+        import json as _json
+        with open(mobiles_json, 'r') as f:
+            return bool(_json.load(f))
+    except Exception:
+        return True
 
-# ---------------------------------------------------------------------------
-# Chart / cloud card definitions:
-# (title, description, html_suffix, thumbnail_fragment)
-# thumbnail_fragment is matched case-insensitively against filenames in thumbs_dir.
-# ---------------------------------------------------------------------------
-CHART_CARDS = [
-    ('Analysis Charts',
-     'Statistical breakdowns by category, band activity over time, '
-     'QSO distributions, and more.',
-     '_chart_gallery.html',
-     'BoxPlotOfScoreByCategory'),
-    ('NY In-State Callsign Clouds',
-     'Top NY callsigns by category — Mobile, Phone, Mixed, and CW '
-     'at each power level — sized by claimed score.',
-     '_wordclouds_instate.html',
-     'wordcloud_composite_instate'),
-    ('Out-of-State & DX Callsign Clouds',
-     'Top out-of-state and DX callsigns by mode and power, '
-     'sized by claimed score.',
-     '_wordclouds_outstate.html',
-     'wordcloud_composite_outstate'),
-]
+
+def _build_tool_cards(host_state, region_term, host_type='State', mobiles_json=None):
+    rt = region_term.lower()
+    if _has_mobiles(mobiles_json):
+        mobile_desc = (f'Follow each mobile station across the map as it activates {rt}s '
+                       f'throughout the contest period.')
+    else:
+        mobile_desc = f'No in-{host_type} mobile stations were active during this contest.'
+    return [
+        (f'{region_term} Activity Animation',
+         f'Watch QSO activity build across {host_state} {rt}s hour by hour '
+         f'as the contest unfolds.',
+         '_county_animation.html',
+         '#2c7bb6'),
+        ('Mobile Station Activity',
+         mobile_desc,
+         '_mobile_animation.html',
+         '#c0392b'),
+        ('US and Canada Activity',
+         'See how participation from every state and Canadian province '
+         'grew over the contest period.',
+         '_state_animation.html',
+         '#1a9850'),
+        (f'{host_state} {region_term} Map',
+         f'Choropleth map of total QSO counts by {host_state} {rt} for all '
+         f'log-submitting stations.',
+         '_enhanced_map.html',
+         '#6c3483'),
+    ]
+
+
+def _build_chart_cards(host_state, host_type='State'):
+    ht = host_type.lower()
+    return [
+        ('Analysis Charts',
+         'Statistical breakdowns by category, band activity over time, '
+         'QSO distributions, and more.',
+         '_chart_gallery.html',
+         'BoxPlotOfScoreByCategory'),
+        (f'{host_state} In-{host_type} Callsign Clouds',
+         f'Top {host_state} callsigns by category — Mobile, Phone, Mixed, and CW '
+         f'at each power level — sized by claimed score.',
+         '_wordclouds_instate.html',
+         'wordcloud_composite_instate'),
+        (f'Out-of-{host_type} & DX Callsign Clouds',
+         f'Top out-of-{ht} and DX callsigns by mode and power, '
+         f'sized by claimed score.',
+         '_wordclouds_outstate.html',
+         'wordcloud_composite_outstate'),
+    ]
+
 
 STATS_CARD = (
     'Contest Statistics',
@@ -112,11 +124,16 @@ def _pull_stats(meta_db, qso_db):
 
 
 def generate_landing_html(contest_name, contest_id, html_dir, thumbs_dir,
-                          output_html, meta_db=None, qso_db=None, dx_countries=None):
+                          output_html, meta_db=None, qso_db=None, dx_countries=None,
+                          host_state='NY', host_type='State', region_term='County',
+                          mobiles_json=None):
 
     cid = contest_id.lower()
     stats = _pull_stats(meta_db, qso_db) if (meta_db and qso_db) else (None, None)
     logs, qsos = stats
+
+    tool_cards  = _build_tool_cards(host_state, region_term, host_type, mobiles_json)
+    chart_cards = _build_chart_cards(host_state, host_type)
 
     # ---- header stats badges ----
     badge_html = ''
@@ -129,7 +146,7 @@ def generate_landing_html(contest_name, contest_id, html_dir, thumbs_dir,
 
     # ---- tool cards ----
     tool_items = []
-    for title, desc, suffix, color in TOOL_CARDS:
+    for title, desc, suffix, color in tool_cards:
         target = html_dir / f'{cid}{suffix}'
         if not target.exists():
             continue
@@ -147,7 +164,7 @@ def generate_landing_html(contest_name, contest_id, html_dir, thumbs_dir,
 
     # ---- chart / cloud cards ----
     chart_items = []
-    for title, desc, suffix, thumb_frag in CHART_CARDS:
+    for title, desc, suffix, thumb_frag in chart_cards:
         target = html_dir / f'{cid}{suffix}'
         if not target.exists():
             continue
@@ -359,6 +376,10 @@ def main():
     parser.add_argument('--contest-id',   required=True)
     parser.add_argument('--meta-db',       default=None)
     parser.add_argument('--qso-db',        default=None)
+    parser.add_argument('--host-state',    default='NY', help='Host state/province abbreviation (e.g. NY, BC)')
+    parser.add_argument('--host-type',     default='State', help='Term for the host jurisdiction (e.g. State, Province)')
+    parser.add_argument('--region-term',   default='County', help='Display term for host regions (e.g. County, District)')
+    parser.add_argument('--mobiles',       default=None, help='Path to mobile_stations.json (used to detect no-mobile contests)')
     parser.add_argument('--dx-countries',  type=int, default=None,
                         help='Number of DX countries worked (from official results)')
     args = parser.parse_args()
@@ -374,6 +395,10 @@ def main():
         html_dir, thumbs_dir, output_html,
         meta_db=args.meta_db, qso_db=args.qso_db,
         dx_countries=args.dx_countries,
+        host_state=args.host_state,
+        host_type=args.host_type,
+        region_term=args.region_term,
+        mobiles_json=args.mobiles,
     )
     with open(output_html, 'w') as f:
         f.write(html)

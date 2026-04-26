@@ -11,16 +11,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
-# Default NY county abbreviations — used to map rx_county host-county values to state code 'NY'
-DEFAULT_HOST_COUNTIES = {
-    'ALB', 'ALL', 'BRM', 'BRX', 'CAT', 'CAY', 'CHA', 'CHE', 'CGO', 'CLI',
-    'COL', 'COR', 'DEL', 'DUT', 'ERI', 'ESS', 'FRA', 'FUL', 'GEN', 'GRE',
-    'HAM', 'HER', 'JEF', 'KIN', 'LEW', 'LIV', 'MAD', 'MON', 'MTG', 'NAS',
-    'NEW', 'NIA', 'ONE', 'ONO', 'ONT', 'ORA', 'ORL', 'OSW', 'OTS', 'PUT',
-    'QUE', 'REN', 'RIC', 'ROC', 'SAR', 'SCH', 'SCO', 'SCU', 'SEN', 'STE',
-    'STL', 'SUF', 'SUL', 'TIO', 'TOM', 'ULS', 'WAR', 'WAS', 'WAY', 'WES',
-    'WYO', 'YAT',
-}
+def _load_host_counties(boundaries_file):
+    """Return set of host region codes from GeoJSON COUNTY property."""
+    try:
+        with open(boundaries_file, 'r') as f:
+            data = json.load(f)
+        return {feat['properties']['COUNTY']
+                for feat in data['features']
+                if 'COUNTY' in feat.get('properties', {})}
+    except Exception:
+        return set()
 
 
 def generate_state_animation_data(qso_db, output_file, contest_start_str,
@@ -113,14 +113,19 @@ def main():
                         help='Contest end UTC (e.g. "2025-10-19 02:00:00")')
     parser.add_argument('--host-state', default='NY',
                         help='Host state abbreviation (default: NY)')
-    parser.add_argument('--host-counties', help='JSON file with host county abbreviations list '
-                        '(uses NY defaults if omitted)')
+    parser.add_argument('--boundaries', default=None,
+                        help='GeoJSON boundaries file (derives host region codes from COUNTY property)')
+    parser.add_argument('--host-counties', default=None,
+                        help='JSON file with host county/district abbreviations list (overrides --boundaries)')
     args = parser.parse_args()
 
-    host_counties = DEFAULT_HOST_COUNTIES
     if args.host_counties:
         with open(args.host_counties, 'r') as f:
             host_counties = set(json.load(f))
+    elif args.boundaries:
+        host_counties = _load_host_counties(args.boundaries)
+    else:
+        host_counties = set()
 
     generate_state_animation_data(
         args.db, args.output,

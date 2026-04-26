@@ -161,7 +161,7 @@ def _build_inset_features(boundaries_data, canada_data):
 
 def generate_state_animation_html(animation_data_file, boundaries_file, canada_boundaries_file,
                                    output_file, host_state, contest_name, title,
-                                   about_text=STATE_ABOUT):
+                                   about_text=STATE_ABOUT, host_type='State'):
     with open(animation_data_file) as f:
         animation_data = json.load(f)
     with open(boundaries_file) as f:
@@ -288,10 +288,10 @@ def generate_state_animation_html(animation_data_file, boundaries_file, canada_b
             updateLegend(maxQSOs);
 
             const totalQsos = Object.values(frame.states || {{}}).reduce((s, v) => s + v, 0);
-            const activeStates = Object.keys(frame.states || {{}})
-                .filter(s => usStateCodes.has(s) && frame.states[s] > 0).length;
+            const activeCount = Object.keys(frame.states || {{}})
+                .filter(s => {'usStateCodes.has(s)' if host_type == 'State' else 'true'} && frame.states[s] > 0).length;
             document.getElementById('statusDisplay').textContent =
-                `${{contestMeta.contest_name}} | QSOs: ${{totalQsos}} | Active States: ${{activeStates}}`;
+                `${{contestMeta.contest_name}} | QSOs: ${{totalQsos}} | Active {'States' if host_type == 'State' else 'Provinces/States'}: ${{activeCount}}`;
         }}
 
         updateFrame();
@@ -313,6 +313,7 @@ def main():
                         help='Path to Canadian provinces GeoJSON')
     parser.add_argument('--output', required=True)
     parser.add_argument('--host-state', default='NY')
+    parser.add_argument('--host-type',  default='State', help='Term for the host jurisdiction (e.g. State, Province)')
     parser.add_argument('--contest-name', required=True)
     parser.add_argument('--title', help='HTML page title')
     parser.add_argument('--about', default=STATE_ABOUT)
@@ -321,7 +322,8 @@ def main():
     generate_state_animation_html(
         args.animation_data, args.boundaries, args.canada_boundaries,
         args.output, args.host_state, args.contest_name,
-        args.title or args.contest_name, args.about
+        args.title or args.contest_name, args.about,
+        host_type=args.host_type,
     )
 
 

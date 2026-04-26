@@ -31,35 +31,16 @@ CA_PROVINCE_NAMES = {
     'SK':'Saskatchewan','YT':'Yukon',
 }
 
-# NY county abbreviations — used to group county-level QSOs under state 'NY'
-NY_COUNTIES = {
-    'ALB','ALL','BRM','BRX','CAT','CAY','CHA','CHE','CGO','CLI',
-    'COL','COR','DEL','DUT','ERI','ESS','FRA','FUL','GEN','GRE',
-    'HAM','HER','JEF','KIN','LEW','LIV','MAD','MON','MTG','NAS',
-    'NEW','NIA','ONE','ONO','ONT','ORA','ORL','OSW','OTS','PUT',
-    'QUE','REN','RIC','ROC','SAR','SCH','SCO','SCU','SEN','STE',
-    'STL','SUF','SUL','TIO','TOM','ULS','WAR','WAS','WAY','WES',
-    'WYO','YAT',
-}
-
-NY_COUNTY_NAMES = {
-    "ALB": "Albany",    "ALL": "Allegany",  "BRX": "Bronx",      "BRM": "Broome",
-    "CAT": "Cattaraugus","CAY": "Cayuga",   "CHA": "Chautauqua", "CHE": "Chemung",
-    "CGO": "Chenango",  "CLI": "Clinton",   "COL": "Columbia",   "COR": "Cortland",
-    "DEL": "Delaware",  "DUT": "Dutchess",  "ERI": "Erie",       "ESS": "Essex",
-    "FRA": "Franklin",  "FUL": "Fulton",    "GEN": "Genesee",    "GRE": "Greene",
-    "HAM": "Hamilton",  "HER": "Herkimer",  "JEF": "Jefferson",  "KIN": "Kings",
-    "LEW": "Lewis",     "LIV": "Livingston","MAD": "Madison",    "MON": "Monroe",
-    "MTG": "Montgomery","NAS": "Nassau",    "NEW": "New York",   "NIA": "Niagara",
-    "ONE": "Oneida",    "ONO": "Onondaga",  "ONT": "Ontario",    "ORA": "Orange",
-    "ORL": "Orleans",   "OSW": "Oswego",    "OTS": "Otsego",     "PUT": "Putnam",
-    "QUE": "Queens",    "REN": "Rensselaer","RIC": "Richmond",   "ROC": "Rockland",
-    "SAR": "Saratoga",  "SCH": "Schenectady","SCO": "Schoharie", "SCU": "Schuyler",
-    "SEN": "Seneca",    "STL": "St. Lawrence","STE": "Steuben",  "SUF": "Suffolk",
-    "SUL": "Sullivan",  "TIO": "Tioga",     "TOM": "Tompkins",   "ULS": "Ulster",
-    "WAR": "Warren",    "WAS": "Washington","WAY": "Wayne",      "WES": "Westchester",
-    "WYO": "Wyoming",   "YAT": "Yates",
-}
+def _load_host_counties(boundaries_file):
+    """Return set of host region codes from GeoJSON COUNTY property."""
+    try:
+        with open(boundaries_file, 'r') as f:
+            data = json.load(f)
+        return {feat['properties']['COUNTY']
+                for feat in data['features']
+                if 'COUNTY' in feat.get('properties', {})}
+    except Exception:
+        return set()
 
 
 def _mode_case(col):
@@ -73,7 +54,9 @@ def _mode_case(col):
 
 def generate_county_breakdown(qso_db, host_counties=None, contest_start=None, contest_end=None):
     """Return per-county sent/received counts by mode for host-state counties."""
-    counties = host_counties or NY_COUNTIES
+    counties = host_counties or set()
+    if not counties:
+        return {}
     placeholders = ','.join(f"'{c}'" for c in counties)
     win = f"AND datetime >= '{contest_start}' AND datetime <= '{contest_end}'" if contest_start else ""
 
@@ -110,7 +93,9 @@ def generate_county_breakdown(qso_db, host_counties=None, contest_start=None, co
 
 def generate_state_breakdown(qso_db, host_counties=None, host_state='NY', contest_start=None, contest_end=None):
     """Return per-state sent/received counts by mode."""
-    counties = host_counties or NY_COUNTIES
+    counties = host_counties or set()
+    if not counties:
+        return {}
     placeholders = ','.join(f"'{c}'" for c in counties)
     win = f"AND datetime >= '{contest_start}' AND datetime <= '{contest_end}'" if contest_start else ""
 
@@ -691,8 +676,9 @@ def main():
     parser.add_argument('--contest-end',   required=True, help='Contest end UTC (e.g. "2025-10-19T02:00:00")')
     parser.add_argument('--normalizations', default=None, help='Path to callsign_normalizations.json')
     parser.add_argument('--mobiles', default=None, help='Path to mobile_stations.json')
-    parser.add_argument('--host-state', default='NY', help='Host state/province abbreviation (e.g. NY, BC)')
+    parser.add_argument('--host-state',  default='NY', help='Host state/province abbreviation (e.g. NY, BC)')
     parser.add_argument('--region-term', default='County', help='Display term for host regions (e.g. County, District, Parish)')
+    parser.add_argument('--boundaries',  default=None, help='GeoJSON boundaries file (for host county/district codes)')
     args = parser.parse_args()
 
     contest_start = args.contest_start.replace('T', ' ')
@@ -701,9 +687,11 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    host_counties = _load_host_counties(args.boundaries) if args.boundaries else set()
+
     stats = generate_contest_stats(args.meta_db, args.qso_db, contest_start, contest_end, host_state=args.host_state)
-    stats['county_breakdown'] = generate_county_breakdown(args.qso_db, contest_start=contest_start, contest_end=contest_end)
-    stats['state_breakdown']  = generate_state_breakdown(args.qso_db, host_state=args.host_state, contest_start=contest_start, contest_end=contest_end)
+    stats['county_breakdown'] = generate_county_breakdown(args.qso_db, host_counties=host_counties, contest_start=contest_start, contest_end=contest_end)
+    stats['state_breakdown']  = generate_state_breakdown(args.qso_db, host_counties=host_counties, host_state=args.host_state, contest_start=contest_start, contest_end=contest_end)
 
     json_path = output_dir / 'contest_stats.json'
     with open(json_path, 'w') as f:

@@ -4,6 +4,7 @@
   "abbreviation": "BCQP",
   "year": 2026,
   "host_state": "BC",
+  "host_type": "Province",
   "region_term": "District",
   "schedule": {
     "start_date": "2026-02-07",

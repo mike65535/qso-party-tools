@@ -53,11 +53,11 @@ def get_county_data(meta_db, qso_db, valid_counties):
 
 
 MAP_ABOUT = (
-    "This map shows total QSO activity by NY county for the entire contest period. "
-    "County color reflects the number of QSOs logged by stations operating from that county; "
-    "hover over a county for a quick summary or click for the top stations. "
-    "Counties with no submitted logs appear in gray even if they were worked by other stations. "
-    "The color scale uses seven bands relative to the county with the highest QSO total."
+    "This map shows total QSO activity by region for the entire contest period. "
+    "Region color reflects the number of QSOs logged by stations operating from that region; "
+    "hover over a region for a quick summary or click for the top stations. "
+    "Regions with no submitted logs appear in gray even if they were worked by other stations. "
+    "The color scale uses seven bands relative to the region with the highest QSO total."
 )
 
 def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, name_map, map_about=MAP_ABOUT):
@@ -269,33 +269,13 @@ def generate_map_html(meta_db, qso_db, boundaries_file, title, valid_counties, n
 
 
 def main():
-    # Default NY county name-to-abbreviation mapping
-    DEFAULT_NAME_MAP = {
-        "Albany": "ALB", "Allegany": "ALL", "Broome": "BRM", "Bronx": "BRX",
-        "Cattaraugus": "CAT", "Cayuga": "CAY", "Chautauqua": "CHA", "Chemung": "CHE",
-        "Chenango": "CGO", "Clinton": "CLI", "Columbia": "COL", "Cortland": "COR",
-        "Delaware": "DEL", "Dutchess": "DUT", "Erie": "ERI", "Essex": "ESS",
-        "Franklin": "FRA", "Fulton": "FUL", "Genesee": "GEN", "Greene": "GRE",
-        "Hamilton": "HAM", "Herkimer": "HER", "Jefferson": "JEF", "Kings": "KIN",
-        "Lewis": "LEW", "Livingston": "LIV", "Madison": "MAD", "Monroe": "MON",
-        "Montgomery": "MTG", "Nassau": "NAS", "New York": "NEW", "Niagara": "NIA",
-        "Oneida": "ONE", "Onondaga": "ONO", "Ontario": "ONT", "Orange": "ORA",
-        "Orleans": "ORL", "Oswego": "OSW", "Otsego": "OTS", "Putnam": "PUT",
-        "Queens": "QUE", "Rensselaer": "REN", "Richmond": "RIC", "Rockland": "ROC",
-        "Saratoga": "SAR", "Schenectady": "SCH", "Schoharie": "SCO", "Schuyler": "SCU",
-        "Seneca": "SEN", "Steuben": "STE", "St. Lawrence": "STL", "Suffolk": "SUF",
-        "Sullivan": "SUL", "Tioga": "TIO", "Tompkins": "TOM", "Ulster": "ULS",
-        "Warren": "WAR", "Washington": "WAS", "Wayne": "WAY", "Westchester": "WES",
-        "Wyoming": "WYO", "Yates": "YAT"
-    }
-
     parser = argparse.ArgumentParser(description='Generate enhanced county activity map')
     parser.add_argument('--meta-db', required=True, help='Path to contest_meta.db')
     parser.add_argument('--qso-db', required=True, help='Path to contest_qsos.db')
     parser.add_argument('--output', required=True, help='Output HTML file path')
     parser.add_argument('--boundaries', default='reference/ny_counties.json',
-                        help='GeoJSON county boundaries file (default: reference/ny_counties.json)')
-    parser.add_argument('--name-map', help='JSON file mapping county names to abbreviations (uses NY defaults if omitted)')
+                        help='GeoJSON boundaries file')
+    parser.add_argument('--name-map', help='JSON file mapping region names to abbreviations (derived from boundaries if omitted)')
     parser.add_argument('--title', default='QSOs made from host-state stations')
     parser.add_argument('--about', default=MAP_ABOUT, help='About panel text')
     args = parser.parse_args()
@@ -305,18 +285,13 @@ def main():
             name_map = json.load(f)
     else:
         # Derive name_map from GeoJSON boundaries (NAME -> COUNTY code)
-        try:
-            with open(args.boundaries, 'r') as f:
-                bdata = json.load(f)
-            name_map = {
-                feat['properties']['NAME']: feat['properties']['COUNTY']
-                for feat in bdata['features']
-                if 'NAME' in feat['properties'] and 'COUNTY' in feat['properties']
-            }
-            if not name_map:
-                name_map = DEFAULT_NAME_MAP
-        except Exception:
-            name_map = DEFAULT_NAME_MAP
+        with open(args.boundaries, 'r') as f:
+            bdata = json.load(f)
+        name_map = {
+            feat['properties']['NAME']: feat['properties']['COUNTY']
+            for feat in bdata['features']
+            if 'NAME' in feat['properties'] and 'COUNTY' in feat['properties']
+        }
 
     valid_counties = set(name_map.values())
 

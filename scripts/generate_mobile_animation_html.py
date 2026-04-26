@@ -16,25 +16,6 @@ from lib.animation_controls import get_controls_css
 from lib.vendor_assets import leaflet_turf_head_html
 from lib.animation_legend import get_legend_css
 
-NY_COUNTY_NAMES = {
-    "ALB": "Albany County", "ALL": "Allegany County", "BRX": "Bronx County", "BRM": "Broome County",
-    "CAT": "Cattaraugus County", "CAY": "Cayuga County", "CHA": "Chautauqua County", "CHE": "Chemung County",
-    "CGO": "Chenango County", "CLI": "Clinton County", "COL": "Columbia County", "COR": "Cortland County",
-    "DEL": "Delaware County", "DUT": "Dutchess County", "ERI": "Erie County", "ESS": "Essex County",
-    "FRA": "Franklin County", "FUL": "Fulton County", "GEN": "Genesee County", "GRE": "Greene County",
-    "HAM": "Hamilton County", "HER": "Herkimer County", "JEF": "Jefferson County", "KIN": "Kings County",
-    "LEW": "Lewis County", "LIV": "Livingston County", "MAD": "Madison County", "MON": "Monroe County",
-    "MTG": "Montgomery County", "NAS": "Nassau County", "NEW": "New York County", "NIA": "Niagara County",
-    "ONE": "Oneida County", "ONO": "Onondaga County", "ONT": "Ontario County", "ORA": "Orange County",
-    "ORL": "Orleans County", "OSW": "Oswego County", "OTS": "Otsego County", "PUT": "Putnam County",
-    "QUE": "Queens County", "REN": "Rensselaer County", "RIC": "Richmond County", "ROC": "Rockland County",
-    "SAR": "Saratoga County", "SCH": "Schenectady County", "SCO": "Schoharie County", "SCU": "Schuyler County",
-    "SEN": "Seneca County", "STL": "St. Lawrence County", "STE": "Steuben County", "SUF": "Suffolk County",
-    "SUL": "Sullivan County", "TIO": "Tioga County", "TOM": "Tompkins County", "ULS": "Ulster County",
-    "WAR": "Warren County", "WAS": "Washington County", "WAY": "Wayne County", "WES": "Westchester County",
-    "WYO": "Wyoming County", "YAT": "Yates County",
-}
-
 DEFAULT_ICONS = {
     'N2CU': '🚗', 'K2A': '🚙', 'N2T': '🚐', 'K2V': '🚛', 'KQ2R': '🏎️',
     'KV2X': '🚓', 'N1GBE': '🚑', 'N2B': '🚒', 'AB1BL': '🚌', 'W1WV': '🛻',
@@ -44,9 +25,127 @@ DEFAULT_ICONS = {
 
 MOBILE_ABOUT = None  # Auto-generated from region_term; see generate_mobile_animation()
 
+
+def _generate_no_mobile_html(boundaries_file, output_file, title, region_term, host_type='State'):
+    """Generate a static map page used when no in-host-type mobiles were detected."""
+    with open(boundaries_file, 'r') as f:
+        boundaries_data = json.load(f)
+
+    rt = region_term.lower()
+    banner_msg = f'No In-{host_type} Mobiles Detected'
+
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    {leaflet_turf_head_html()}
+    <style>
+        body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; }}
+        #map {{ height: 95vh; width: 100%; background-color: white; }}
+        .leaflet-top {{ top: 40px; }}
+        {get_controls_css()}
+        {get_legend_css()}
+        #no-mobile-banner {{
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            background: rgba(28, 37, 47, 0.88);
+            color: #fff;
+            padding: 1.2em 2.4em;
+            border-radius: 12px;
+            font-size: 1.35em;
+            font-weight: bold;
+            text-align: center;
+            pointer-events: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            white-space: nowrap;
+        }}
+        .controls-disabled {{
+            opacity: 0.4;
+            pointer-events: none;
+        }}
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="no-mobile-banner">{banner_msg}</div>
+
+    <div class="legend" id="legend">
+        <div style="font-weight:bold;margin-bottom:5px;">Mobile QSOs</div>
+        <div class="legend-item"><div class="legend-color" style="background:#e8e8e8;"></div><span>0</span></div>
+    </div>
+
+    <div class="controls controls-disabled">
+        <div class="top-controls">
+            <button class="control-btn" disabled>▶ Play</button>
+            <button class="control-btn" disabled>⏮ Reset</button>
+            <button class="control-btn" disabled>Speed 1x</button>
+        </div>
+        <div class="middle-row">
+            <div class="time-info">
+                <span>--</span> <span>--:--Z</span>
+            </div>
+            <div class="progress-section">
+                <div class="progress-container">
+                    <div class="progress-bar" style="width:0%"></div>
+                </div>
+            </div>
+        </div>
+        <div class="bottom-info">
+            <span>{title} | No mobile {rt} data</span>
+        </div>
+    </div>
+
+    <script>
+        const boundariesData = {json.dumps(boundaries_data)};
+
+        function initMap() {{
+            const map = L.map('map', {{ zoomDelta: 0.25, zoomSnap: 0.25 }}).setView([0, 0], 2);
+            const regionLayer = L.geoJSON(boundariesData, {{
+                style: () => ({{ fillColor: '#e8e8e8', weight: 0.5, opacity: 0.8, color: '#666', fillOpacity: 0.7 }})
+            }}).addTo(map);
+            map.fitBounds(regionLayer.getBounds());
+
+            try {{
+                const allFeatures = boundariesData.features;
+                let merged = allFeatures[0];
+                for (let i = 1; i < allFeatures.length; i++) {{
+                    try {{ const u = turf.union(merged, allFeatures[i]); if (u) merged = u; }} catch(e) {{}}
+                }}
+                if (merged) {{
+                    try {{
+                        const mask = turf.difference(turf.bboxPolygon([-180,-90,180,90]), merged);
+                        if (mask) L.geoJSON(mask, {{
+                            style: {{ fillColor:'white', fillOpacity:1, weight:0, stroke:false }},
+                            interactive: false, pane:'overlayPane'
+                        }}).addTo(map);
+                    }} catch(e) {{}}
+                    L.geoJSON(merged, {{
+                        style: {{ fillColor:'transparent', weight:3, opacity:1, color:'#1a252f', fillOpacity:0 }},
+                        interactive: false
+                    }}).addTo(map);
+                }}
+            }} catch(e) {{}}
+        }}
+
+        document.addEventListener('DOMContentLoaded', initMap);
+    </script>
+</body></html>'''
+
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+    with open(output_file, 'w') as f:
+        f.write(html)
+    print(f"Mobile animation saved to {output_file} (no mobiles)")
+
+
 def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
                                boundaries_file, output_file,
-                               contest_start, contest_end, title, region_term="County", about_text=None):
+                               contest_start, contest_end, title, region_term="County",
+                               host_type="State", about_text=None):
     if about_text is None:
         rt = region_term.lower()
         about_text = (
@@ -73,6 +172,10 @@ def generate_mobile_animation(qso_db, mobiles_json, county_line_json,
     with open(mobiles_json, 'r') as f:
         mobile_info = json.load(f)
     mobile_callsigns = list(mobile_info.keys())
+
+    if not mobile_callsigns:
+        _generate_no_mobile_html(boundaries_file, output_file, title, region_term, host_type)
+        return
 
     start_db = contest_start.replace('T', ' ')
     end_db   = contest_end.replace('T', ' ')
@@ -438,6 +541,7 @@ def main():
                         help='Contest end UTC (e.g. "2025-10-19T02:00:00")')
     parser.add_argument('--title', default='Mobile Station Activity Animation')
     parser.add_argument('--region-term', default='County', help='Term for host regions (e.g. County, District, Parish)')
+    parser.add_argument('--host-type',   default='State',  help='Term for the host jurisdiction (e.g. State, Province)')
     parser.add_argument('--about', default=None, help='About panel text (default: auto-generated from region-term)')
     args = parser.parse_args()
 
@@ -445,7 +549,7 @@ def main():
         args.db, args.mobiles, args.county_line_periods,
         args.boundaries, args.output,
         args.contest_start, args.contest_end, args.title,
-        region_term=args.region_term, about_text=args.about
+        region_term=args.region_term, host_type=args.host_type, about_text=args.about
     )
 
 

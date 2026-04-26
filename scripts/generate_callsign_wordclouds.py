@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate callsign word clouds split by category, producing two HTML pages:
-  - In-State: NY Mobile + 5 NY fixed/portable categories
+  - In-State: host-state Mobile + 5 host-state fixed/portable categories
   - Out-of-State: 5 OOS categories + DX
 
 Each page shows 6 clouds in a 2x3 grid.  Composite PNG thumbnails are
@@ -32,18 +32,22 @@ MAX_WORDS = 15
 
 # ---------------------------------------------------------------------------
 # Cloud definitions: (key, title, location, station_type, mode, power, color)
-#   location:     'NY' | 'DX' | None (= out-of-state, not NY and not DX)
+#   location:     host_state | 'DX' | None (= out-of-state, not host and not DX)
 #   station_type: 'MOBILE' | None (= any non-mobile)
 #   mode/power:   DB values, or None = no filter
 # ---------------------------------------------------------------------------
-INSTATE_CLOUDS = [
-    ('ny_mobile',   'NY Mobile Stations',      'NY',  'MOBILE', None,    None,   '#d73027'),
-    ('ny_phone_lp', 'NY Phone — Low Power',    'NY',  None,     'SSB',   'LOW',  '#1a6eb5'),
-    ('ny_mixed_lp', 'NY Mixed — Low Power',    'NY',  None,     'MIXED', 'LOW',  '#2ca25f'),
-    ('ny_cw_lp',    'NY CW — Low Power',       'NY',  None,     'CW',    'LOW',  '#f46d43'),
-    ('ny_mixed_hp', 'NY Mixed — High Power',   'NY',  None,     'MIXED', 'HIGH', '#74add1'),
-    ('ny_phone_hp', 'NY Phone — High Power',   'NY',  None,     'SSB',   'HIGH', '#a50026'),
-]
+
+def _build_instate_clouds(host_state):
+    hs = host_state
+    key = hs.lower()
+    return [
+        (f'{key}_mobile',   f'{hs} Mobile Stations',    hs, 'MOBILE', None,    None,   '#d73027'),
+        (f'{key}_phone_lp', f'{hs} Phone — Low Power',  hs, None,     'SSB',   'LOW',  '#1a6eb5'),
+        (f'{key}_mixed_lp', f'{hs} Mixed — Low Power',  hs, None,     'MIXED', 'LOW',  '#2ca25f'),
+        (f'{key}_cw_lp',    f'{hs} CW — Low Power',     hs, None,     'CW',    'LOW',  '#f46d43'),
+        (f'{key}_mixed_hp', f'{hs} Mixed — High Power', hs, None,     'MIXED', 'HIGH', '#74add1'),
+        (f'{key}_phone_hp', f'{hs} Phone — High Power', hs, None,     'SSB',   'HIGH', '#a50026'),
+    ]
 
 OUTSTATE_CLOUDS = [
     ('oos_cw_lp',    'Out-of-State CW — Low Power',    None, None, 'CW',    'LOW',  '#313695'),
@@ -54,8 +58,6 @@ OUTSTATE_CLOUDS = [
     ('dx',           'DX Stations',                    'DX', None, None,    None,   '#8856a7'),
 ]
 
-ALL_CLOUDS = INSTATE_CLOUDS + OUTSTATE_CLOUDS
-
 
 def _single_color_fn(color):
     def fn(word, font_size, position, orientation, random_state=None, **kwargs):
@@ -63,7 +65,7 @@ def _single_color_fn(color):
     return fn
 
 
-def fetch_all_frequency_maps(meta_db, qso_db):
+def fetch_all_frequency_maps(meta_db, qso_db, all_clouds, host_state='NY'):
     """Return {key: {callsign: weight}} for every cloud group."""
     meta_conn = sqlite3.connect(meta_db)
     stations = {}
@@ -83,7 +85,7 @@ def fetch_all_frequency_maps(meta_db, qso_db):
     ).fetchall()}
     qso_conn.close()
 
-    maps = {defn[0]: {} for defn in ALL_CLOUDS}
+    maps = {defn[0]: {} for defn in all_clouds}
 
     for call, n in counts.items():
         s = stations.get(call, {})
@@ -94,14 +96,14 @@ def fetch_all_frequency_maps(meta_db, qso_db):
         score = s.get('claimed_score')
         op_cat = s.get('operator_category')
 
-        for key, _title, f_loc, f_stype, f_mode, f_power, _color in ALL_CLOUDS:
+        for key, _title, f_loc, f_stype, f_mode, f_power, _color in all_clouds:
             # Location filter
-            if f_loc == 'NY'  and loc != 'NY':  continue
-            if f_loc == 'DX'  and loc != 'DX':  continue
-            if f_loc is None  and loc in ('NY', 'DX'):  continue
+            if f_loc == host_state and loc != host_state: continue
+            if f_loc == 'DX'       and loc != 'DX':       continue
+            if f_loc is None       and loc in (host_state, 'DX'): continue
             # Station-type filter
             if f_stype == 'MOBILE' and stype != 'MOBILE': continue
-            if f_stype is None and f_loc == 'NY' and stype == 'MOBILE': continue
+            if f_stype is None and f_loc == host_state and stype == 'MOBILE': continue
             # All non-mobile clouds are single-op only; mobile cloud includes all op types
             if f_stype != 'MOBILE' and op_cat != 'SINGLE-OP': continue
             # Mode / power filters
@@ -269,11 +271,18 @@ def main():
     parser.add_argument('--meta-db',            required=True)
     parser.add_argument('--qso-db',             required=True)
     parser.add_argument('--output-dir',         required=True, help='Directory for PNG files')
-    parser.add_argument('--output-html-instate',  required=True, help='HTML path for NY in-state page')
+    parser.add_argument('--output-html-instate',  required=True, help='HTML path for in-state page')
     parser.add_argument('--output-html-outstate', required=True, help='HTML path for out-of-state/DX page')
     parser.add_argument('--contest-name',       default='Contest')
     parser.add_argument('--contest-id',         required=True)
+    parser.add_argument('--host-state',         default='NY', help='Host state/province abbreviation (e.g. NY, BC)')
+    parser.add_argument('--host-type',          default='State', help='Term for the host jurisdiction (e.g. State, Province)')
     args = parser.parse_args()
+
+    host_state     = args.host_state
+    host_type      = args.host_type
+    instate_clouds = _build_instate_clouds(host_state)
+    all_clouds     = instate_clouds + OUTSTATE_CLOUDS
 
     out_dir        = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -282,37 +291,40 @@ def main():
     cid            = args.contest_id
 
     print("Fetching QSO counts...")
-    maps = fetch_all_frequency_maps(args.meta_db, args.qso_db)
+    maps = fetch_all_frequency_maps(args.meta_db, args.qso_db, all_clouds, host_state)
     for key, n in {k: len(v) for k, v in maps.items()}.items():
         print(f"  {key}: {n} stations")
 
     # Build PNG paths for each cloud group
     png_paths = {
         defn[0]: out_dir / f'{cid}_wordcloud_{defn[0]}.png'
-        for defn in ALL_CLOUDS
+        for defn in all_clouds
     }
 
     print("Generating word clouds...")
-    for key, title, _loc, _stype, _mode, _power, color in ALL_CLOUDS:
+    for key, title, _loc, _stype, _mode, _power, color in all_clouds:
         make_wordcloud(maps[key], color, png_paths[key])
 
-    instate_pairs  = [(png_paths[d[0]], d[1]) for d in INSTATE_CLOUDS]
+    instate_pairs  = [(png_paths[d[0]], d[1]) for d in instate_clouds]
     outstate_pairs = [(png_paths[d[0]], d[1]) for d in OUTSTATE_CLOUDS]
 
     print("Generating composites...")
     make_composite(instate_pairs,  out_dir / f'{cid}_wordcloud_composite_instate.png')
     make_composite(outstate_pairs, out_dir / f'{cid}_wordcloud_composite_outstate.png')
 
+    instate_label  = f'{host_state} In-{host_type} Callsign Clouds'
+    outstate_label = f'Out-of-{host_type} & DX Callsign Clouds'
+
     print("Generating HTML pages...")
     generate_html(
         instate_pairs, instate_html, args.contest_name,
-        'NY In-State Callsign Clouds',
-        other_html=outstate_html, other_label='Out-of-State & DX Clouds',
+        instate_label,
+        other_html=outstate_html, other_label=f'Out-of-{host_type} & DX Clouds',
     )
     generate_html(
         outstate_pairs, outstate_html, args.contest_name,
-        'Out-of-State & DX Callsign Clouds',
-        other_html=instate_html, other_label='NY In-State Clouds',
+        outstate_label,
+        other_html=instate_html, other_label=f'{host_state} In-{host_type} Clouds',
     )
     print("Done!")
 

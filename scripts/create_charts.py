@@ -76,9 +76,9 @@ def create_score_boxplot(meta_db, qso_db, output_dir, contest_id):
     print(f"Created box plot ({len(categories_list)} categories, {len(data)} stations)")
 
 
-def create_qso_distribution(meta_db, qso_db, output_dir, contest_id):
-    ny_stations = pd.read_sql_query(
-        "SELECT callsign FROM stations WHERE location = 'NY'",
+def create_qso_distribution(meta_db, qso_db, output_dir, contest_id, host_state='NY'):
+    host_stations = pd.read_sql_query(
+        f"SELECT callsign FROM stations WHERE location = '{host_state}'",
         sqlite3.connect(meta_db)
     )['callsign'].tolist()
 
@@ -86,15 +86,21 @@ def create_qso_distribution(meta_db, qso_db, output_dir, contest_id):
         SELECT DISTINCT station_call, mode, tx_call, rx_call, datetime, freq FROM valid_qsos
     """, sqlite3.connect(qso_db))
 
-    qsos['tx_location'] = qsos['tx_call'].apply(lambda x: 'NY' if x in ny_stations else 'Non-NY')
+    non_host = f'Non-{host_state}'
+    qsos['tx_location'] = qsos['tx_call'].apply(
+        lambda x: host_state if x in host_stations else non_host
+    )
     qsos['mode_clean'] = qsos['mode'].apply(lambda x: 'CW' if 'CW' in x else 'Phone')
 
-    categories = ['NY CW QSOs', 'NY Phone QSOs', 'Non-NY CW QSOs', 'Non-NY Phone QSOs']
+    categories = [
+        f'{host_state} CW QSOs', f'{host_state} Phone QSOs',
+        f'{non_host} CW QSOs',   f'{non_host} Phone QSOs',
+    ]
     counts = [
-        len(qsos[(qsos['tx_location'] == 'NY') & (qsos['mode_clean'] == 'CW')]),
-        len(qsos[(qsos['tx_location'] == 'NY') & (qsos['mode_clean'] == 'Phone')]),
-        len(qsos[(qsos['tx_location'] == 'Non-NY') & (qsos['mode_clean'] == 'CW')]),
-        len(qsos[(qsos['tx_location'] == 'Non-NY') & (qsos['mode_clean'] == 'Phone')]),
+        len(qsos[(qsos['tx_location'] == host_state) & (qsos['mode_clean'] == 'CW')]),
+        len(qsos[(qsos['tx_location'] == host_state) & (qsos['mode_clean'] == 'Phone')]),
+        len(qsos[(qsos['tx_location'] == non_host)   & (qsos['mode_clean'] == 'CW')]),
+        len(qsos[(qsos['tx_location'] == non_host)   & (qsos['mode_clean'] == 'Phone')]),
     ]
 
     plt.figure(figsize=(10, 6))
@@ -252,6 +258,7 @@ def main():
     parser.add_argument('--contest-id', required=True, help='Contest ID prefix for filenames (e.g. NYQP_2025)')
     parser.add_argument('--contest-start', required=True, help='Contest start datetime UTC (e.g. "2025-10-18 14:00:00")')
     parser.add_argument('--duration-hours', type=int, default=12, help='Contest duration in hours')
+    parser.add_argument('--host-state', default='NY', help='Host state/province abbreviation (e.g. NY, BC)')
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -261,7 +268,7 @@ def main():
     create_score_boxplot(args.meta_db, args.qso_db, output_dir, args.contest_id)
 
     print("Creating QSO distribution chart...")
-    create_qso_distribution(args.meta_db, args.qso_db, output_dir, args.contest_id)
+    create_qso_distribution(args.meta_db, args.qso_db, output_dir, args.contest_id, args.host_state)
 
     print("Creating QSO histogram...")
     create_qso_histogram(args.qso_db, output_dir, args.contest_id)
