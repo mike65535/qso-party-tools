@@ -49,14 +49,16 @@ def _build_instate_clouds(host_state):
         (f'{key}_phone_hp', f'{hs} Phone — High Power', hs, None,     'SSB',   'HIGH', '#a50026'),
     ]
 
-OUTSTATE_CLOUDS = [
-    ('oos_cw_lp',    'Out-of-State CW — Low Power',    None, None, 'CW',    'LOW',  '#313695'),
-    ('oos_phone_lp', 'Out-of-State Phone — Low Power', None, None, 'SSB',   'LOW',  '#d73027'),
-    ('oos_mixed_lp', 'Out-of-State Mixed — Low Power', None, None, 'MIXED', 'LOW',  '#1a9850'),
-    ('oos_cw_hp',    'Out-of-State CW — High Power',   None, None, 'CW',    'HIGH', '#4575b4'),
-    ('oos_mixed_hp', 'Out-of-State Mixed — High Power',None, None, 'MIXED', 'HIGH', '#006837'),
-    ('dx',           'DX Stations',                    'DX', None, None,    None,   '#8856a7'),
-]
+def _build_outstate_clouds(host_type='State'):
+    oot = f'Out-of-{host_type}'
+    return [
+        ('oos_cw_lp',    f'{oot} CW — Low Power',    None, None, 'CW',    'LOW',  '#313695'),
+        ('oos_phone_lp', f'{oot} Phone — Low Power', None, None, 'SSB',   'LOW',  '#d73027'),
+        ('oos_mixed_lp', f'{oot} Mixed — Low Power', None, None, 'MIXED', 'LOW',  '#1a9850'),
+        ('oos_cw_hp',    f'{oot} CW — High Power',   None, None, 'CW',    'HIGH', '#4575b4'),
+        ('oos_mixed_hp', f'{oot} Mixed — High Power',None, None, 'MIXED', 'HIGH', '#006837'),
+        ('dx',           'DX Stations',              'DX', None, None,    None,   '#8856a7'),
+    ]
 
 
 def _single_color_fn(color):
@@ -279,10 +281,11 @@ def main():
     parser.add_argument('--host-type',          default='State', help='Term for the host jurisdiction (e.g. State, Province)')
     args = parser.parse_args()
 
-    host_state     = args.host_state
-    host_type      = args.host_type
-    instate_clouds = _build_instate_clouds(host_state)
-    all_clouds     = instate_clouds + OUTSTATE_CLOUDS
+    host_state      = args.host_state
+    host_type       = args.host_type
+    instate_clouds  = _build_instate_clouds(host_state)
+    outstate_clouds = _build_outstate_clouds(host_type)
+    all_clouds      = instate_clouds + outstate_clouds
 
     out_dir        = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +309,7 @@ def main():
         make_wordcloud(maps[key], color, png_paths[key])
 
     instate_pairs  = [(png_paths[d[0]], d[1]) for d in instate_clouds]
-    outstate_pairs = [(png_paths[d[0]], d[1]) for d in OUTSTATE_CLOUDS]
+    outstate_pairs = [(png_paths[d[0]], d[1]) for d in outstate_clouds]
 
     print("Generating composites...")
     make_composite(instate_pairs,  out_dir / f'{cid}_wordcloud_composite_instate.png')
