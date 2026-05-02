@@ -56,7 +56,7 @@ def get_controls_css():
         .control-btn { background: #3498db; color: white; border: none; padding: 8px 12px; margin: 0 2px; border-radius: 4px; cursor: pointer; font-size: 12px; }
         .control-btn:hover { background: #2980b9; }
         .control-btn:disabled { background: #7f8c8d; cursor: not-allowed; }
-        .about-panel { display: none; position: fixed; bottom: 90px; left: 0; right: 0; background: rgba(44,62,80,0.96); color: #ecf0f1; padding: 14px 48px 14px 20px; font-size: 13px; line-height: 1.6; z-index: 999; }
+        .about-panel { display: none; position: fixed; bottom: 90px; left: 0; right: 0; background: rgba(44,62,80,0.96); color: #ecf0f1; padding: 14px 48px 14px 20px; font-size: 13px; line-height: 1.6; z-index: 1001; }
         .about-panel.visible { display: block; }
         .about-close { position: absolute; top: 8px; right: 12px; background: none; border: none; color: #ecf0f1; font-size: 18px; cursor: pointer; line-height: 1; }
         .about-close:hover { color: white; }'''

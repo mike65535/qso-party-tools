@@ -29,7 +29,124 @@ COUNTY_ABOUT = (
     "The color scale is relative to the current frame maximum and adjusts as the contest progresses."
 )
 
-def generate_county_animation(qso_db, boundaries_file, output_file, contest_start, contest_end, title, region_term="County", about_text=None):
+_INSET_W       = 280
+_INSET_MAP_H   = 200
+_INSET_LABEL_H = 26
+_INSET_PANEL_H = _INSET_MAP_H + _INSET_LABEL_H
+_INSET_GAP     = 10
+_INSET_BOTTOM  = 130  # above the animation controls bar
+
+
+def _inset_css():
+    return f'''
+        .inset-panel {{
+            position: fixed; left: 10px; z-index: 1000;
+            width: {_INSET_W}px;
+            border: 2px solid #2c3e50; border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }}
+        .inset-title {{
+            background: #2c3e50; color: #ecf0f1;
+            font-size: 12px; font-weight: bold;
+            padding: 4px 10px; height: {_INSET_LABEL_H}px;
+            line-height: {_INSET_LABEL_H - 8}px; box-sizing: border-box;
+        }}
+        .inset-map {{ height: {_INSET_MAP_H}px; width: 100%; background: white; overflow: hidden; clip-path: inset(0); }}
+        .inset-map .leaflet-tooltip {{ max-width: 160px; white-space: normal; line-height: 1.25; }}'''
+
+
+def _inset_divs(insets):
+    if not insets:
+        return ''
+    parts = []
+    for i, inset in enumerate(insets):
+        bottom = _INSET_BOTTOM + i * (_INSET_PANEL_H + _INSET_GAP)
+        parts.append(
+            f'    <div class="inset-panel" style="bottom:{bottom}px">'
+            f'<div class="inset-title">{inset["label"]}</div>'
+            f'<div class="inset-map" id="inset-map-{i}"></div></div>'
+        )
+    return '\n'.join(parts)
+
+
+def _inset_init_js(insets):
+    if not insets:
+        return ''
+    blocks = []
+    for i, inset in enumerate(insets):
+        b = inset['bounds']
+        lb = f'[[{b[0][1]},{b[0][0]}],[{b[1][1]},{b[1][0]}]]'
+        blocks.append(f'''
+            (function() {{
+                var lb = {lb};
+                var im = L.map('inset-map-{i}', {{
+                    dragging: false, touchZoom: false, scrollWheelZoom: false,
+                    doubleClickZoom: false, boxZoom: false, keyboard: false,
+                    zoomControl: false, attributionControl: false,
+                    maxBounds: lb, maxBoundsViscosity: 1.0
+                }});
+                var il = L.geoJSON(boundariesData, {{
+                    style: function() {{
+                        return {{ fillColor: '#e8e8e8', weight: 1.5, opacity: 0.9, color: '#555', fillOpacity: 1.0 }};
+                    }},
+                    onEachFeature: function(feature, layer) {{
+                        var name = feature.properties.NAME;
+                        var abbrev = feature.properties.COUNTY || getRegionAbbrev(name);
+                        var dname = name.replace(/\u2014/g, ' ');
+                        layer.bindTooltip('<b>'+abbrev+'</b><br>'+dname+'<br>QSOs: 0', {{permanent: false, sticky: true, direction: 'top'}});
+                        layer.on({{
+                            mouseover: function(e) {{
+                                e.target.setStyle({{ weight: 3, color: '#2c3e50', fillOpacity: 0.9 }});
+                                e.target.openTooltip();
+                            }},
+                            mousemove: function(e) {{
+                                var tt = e.target.getTooltip();
+                                if (!tt) return;
+                                var rect = document.getElementById('inset-map-{i}').getBoundingClientRect();
+                                var cx = e.originalEvent.clientX, cy = e.originalEvent.clientY;
+                                var dTop = cy - rect.top, dBottom = rect.bottom - cy;
+                                var dLeft = cx - rect.left, dRight = rect.right - cx;
+                                var m = Math.min(dTop, dBottom, dLeft, dRight);
+                                tt.options.direction = m === dTop ? 'bottom' : m === dBottom ? 'top' : m === dLeft ? 'right' : 'left';
+                            }},
+                            mouseout: function(e) {{
+                                e.target.setStyle({{ weight: 1.5, color: '#555', fillOpacity: 1.0 }});
+                                e.target.closeTooltip();
+                            }}
+                        }});
+                        layer.regionName = name;
+                        layer.regionAbbrev = abbrev;
+                    }}
+                }}).addTo(im);
+                im.fitBounds(lb);
+                insetLayers.push(il);
+            }})();''')
+    return '\n'.join(blocks)
+
+
+def _inset_update_js(insets):
+    if not insets:
+        return ''
+    return '''
+            insetLayers.forEach(function(il) {
+                il.eachLayer(function(layer) {
+                    var fullName = layer.regionName;
+                    var dname = fullName.replace(/\u2014/g, ' ');
+                    var qsoCount = regionQSOs[fullName] || 0;
+                    layer.setStyle({ fillColor: getColor(qsoCount, maxQSOs) });
+                    var stns = regionStations[fullName];
+                    var topText = stns
+                        ? Object.entries(stns).sort((a,b)=>b[1]-a[1]).slice(0,5)
+                            .map(([c,n])=>c+': '+n).join('<br>')
+                        : '';
+                    layer.getTooltip().setContent(
+                        '<b>'+layer.regionAbbrev+'</b><br>'+dname+'<br>QSOs: '+qsoCount+(topText ? '<br>'+topText : '')
+                    );
+                });
+            });'''
+
+
+def generate_county_animation(qso_db, boundaries_file, output_file, contest_start, contest_end, title, region_term="County", about_text=None, insets=None):
     if about_text is None:
         rt = region_term.lower()
         rtp = rt + 's'
@@ -63,6 +180,11 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
 
     print(f"Loaded {len(all_qsos)} QSOs, {len(region_names)} regions in boundaries")
 
+    inset_css    = _inset_css()        if insets else ''
+    inset_divs   = _inset_divs(insets)
+    inset_init   = _inset_init_js(insets)
+    inset_update = _inset_update_js(insets)
+
     html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -75,13 +197,14 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
         #map {{ height: 95vh; width: 100%; background-color: white; }}
         .leaflet-top {{ top: 40px; }}
         {get_controls_css()}
-        {get_legend_css()}
+        {get_legend_css()}{inset_css}
     </style>
 </head>
 <body>
     <div id="map"></div>
     {get_controls_html(about_text)}
     {get_legend_html()}
+{inset_divs}
     <script>
         const regionNames = {json.dumps(region_names, indent=8)};
         const boundariesData = {json.dumps(boundaries_data)};
@@ -93,6 +216,7 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
         const endTime = new Date('{contest_end}Z');
         const regionCoords = {{}};
         let regionLayer;
+        const insetLayers = [];
 
         {get_legend_js(str(COLOR_THRESHOLDS), str(COLOR_PALETTE), f"QSOs per {region_term}")}
 
@@ -142,11 +266,11 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
         }}
 
         function initMap() {{
-            map = L.map('map', {{ zoomDelta: 0.25, zoomSnap: 0.25 }}).setView([0, 0], 2);
+            map = L.map('map', {{ zoomDelta: 0.25, zoomSnap: 0.25 }}).setView([54, -124], 5);
 
             // Add county layer first so map always renders even if Turf fails
             regionLayer = L.geoJSON(boundariesData, {{
-                style: () => ({{ fillColor: '#e8e8e8', weight: 0.5, opacity: 0.8, color: '#666', fillOpacity: 1.0 }}),
+                style: () => ({{ fillColor: '#e8e8e8', weight: 1.5, opacity: 0.9, color: '#555', fillOpacity: 1.0 }}),
                 onEachFeature: function(feature, layer) {{
                     const name = feature.properties.NAME;
                     const abbrev = feature.properties.COUNTY || getRegionAbbrev(name);
@@ -156,7 +280,8 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
                 }}
             }}).addTo(map);
 
-            map.fitBounds(regionLayer.getBounds());
+            const ctrlH = document.querySelector('.controls') ? document.querySelector('.controls').offsetHeight : 120;
+            map.fitBounds(regionLayer.getBounds(), {{ paddingBottomRight: [0, ctrlH] }});
 
             // Precompute region centers
             boundariesData.features.forEach(feature => {{
@@ -167,31 +292,8 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
                 }} catch(e) {{ /* skip */ }}
             }});
 
-            // Turf union for mask/outline — fully optional, map works without it
-            try {{
-                const allFeatures = boundariesData.features;
-                let merged = allFeatures[0];
-                for (let i = 1; i < allFeatures.length; i++) {{
-                    try {{
-                        const u = turf.union(merged, allFeatures[i]);
-                        if (u) merged = u;
-                    }} catch(e) {{ /* skip this feature */ }}
-                }}
-                if (merged) {{
-                    try {{
-                        const mask = turf.difference(turf.bboxPolygon([-180, -90, 180, 90]), merged);
-                        if (mask) L.geoJSON(mask, {{
-                            style: {{ fillColor: 'white', fillOpacity: 1, weight: 0, stroke: false }},
-                            interactive: false, pane: 'overlayPane'
-                        }}).addTo(map);
-                    }} catch(e) {{ /* mask failed, no worries */ }}
-                    L.geoJSON(merged, {{
-                        style: {{ fillColor: 'transparent', weight: 3, opacity: 1, color: '#1a252f', fillOpacity: 0 }},
-                        interactive: false
-                    }}).addTo(map);
-                }}
-            }} catch(e) {{ console.log('Turf outline skipped:', e); }}
-
+{inset_init}
+            map.invalidateSize();
             updateDisplay();
         }}
 
@@ -238,6 +340,7 @@ def generate_county_animation(qso_db, boundaries_file, output_file, contest_star
                 );
             }});
 
+{inset_update}
             const activeRegions = Object.keys(regionQSOs).length;
             document.getElementById('statusDisplay').textContent =
                 `{title} | QSOs: ${{totalQSOs}} | Active {region_term}s: ${{activeRegions}}`;
@@ -274,12 +377,15 @@ def main():
     parser.add_argument('--title', default='County QSO Activity Animation')
     parser.add_argument('--region-term', default='County', help='Term for host regions (e.g. County, District, Parish)')
     parser.add_argument('--about', default=None, help='About panel text (default: auto-generated from region-term)')
+    parser.add_argument('--insets', default=None,
+                        help='JSON array of inset panel definitions: [{"label":"...","bounds":[[lon_min,lat_min],[lon_max,lat_max]]},...]')
     args = parser.parse_args()
 
+    insets = json.loads(args.insets) if args.insets else None
     generate_county_animation(
         args.db, args.boundaries, args.output,
         args.contest_start, args.contest_end, args.title,
-        region_term=args.region_term, about_text=args.about
+        region_term=args.region_term, about_text=args.about, insets=insets
     )
 
 
