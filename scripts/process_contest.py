@@ -191,25 +191,33 @@ def main():
 
     # 8. Generate enhanced map
     print("\n[8/11] Generating enhanced county map...")
-    run('generate_enhanced_map.py', [
+    enhanced_map_args = [
         '--meta-db', meta_db,
         '--qso-db', qso_db,
         '--output', enhanced_map_html,
         '--boundaries', ny_boundaries,
-        '--title', f'QSOs made from {config.get("host_state", "host")} stations'
-    ], script_dir)
+        '--region-term', region_term,
+        '--title', f'QSOs made from {config.get("host_state", "host")} stations',
+    ]
+    map_insets = config.get('map_insets')
+    if map_insets:
+        enhanced_map_args += ['--insets', json.dumps(map_insets)]
+    run('generate_enhanced_map.py', enhanced_map_args, script_dir)
 
     # 9. Generate county-level animation
     print("\n[9/11] Generating county activity animation...")
-    run('generate_county_animation_html.py', [
+    county_anim_args = [
         '--db', qso_db,
         '--boundaries', ny_boundaries,
         '--output', county_anim_html,
         '--contest-start', contest_start_iso,
         '--contest-end', contest_end_iso,
         '--region-term', region_term,
-        '--title', f'{contest_name} {region_term} Activity'
-    ], script_dir)
+        '--title', f'{contest_name} {region_term} Activity',
+    ]
+    if map_insets:
+        county_anim_args += ['--insets', json.dumps(map_insets)]
+    run('generate_county_animation_html.py', county_anim_args, script_dir)
 
     # 10. Generate mobile animation
     print("\n[10/11] Generating mobile station animation...")

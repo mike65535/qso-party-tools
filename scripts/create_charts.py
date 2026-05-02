@@ -4,6 +4,7 @@ Generate contest analysis charts (PNG).
 Produces: box plot, QSO distribution, QSO histogram, per-band activity, stacked band charts.
 """
 
+import os
 import sqlite3
 import argparse
 import matplotlib
@@ -282,6 +283,7 @@ def main():
                                args.contest_start, args.duration_hours)
 
     print("Done!")
+    os._exit(0)   # bypass C-level teardown that segfaults on headless matplotlib
 
 
 if __name__ == '__main__':
