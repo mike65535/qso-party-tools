@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
 """
 Contest processing pipeline orchestrator.
-Reads a contest config JSON and runs all scripts in sequence.
 
-Usage:
-    python3 scripts/process_contest.py config/nyqp_2025.json <logs_dir>
+Run from your contest working directory:
+    cd ~/QSOPARTY/NYQP2025
+    python3 /path/to/qso-party-tools/scripts/process_contest.py nyqp_2025
 
-Directory layout (relative to repo root):
-    data/<contest_id>/          - databases
-    outputs/<contest_id>/       - generated outputs
-      charts/                   - PNG charts and thumbnails
-      html/                     - HTML maps and stats
-      stats/                    - QC reports and JSON data files
+Expected layout of the working directory (created automatically):
+    logs/        - Cabrillo log files (must exist before running)
+    data/        - SQLite databases (created by pipeline)
+    outputs/
+      charts/    - PNG charts and thumbnails
+      html/      - HTML maps, animations, stats
+      stats/     - QC reports and JSON data files
+
+The contest config (nyqp_2025.json) lives in the qso-party-tools repo.
+Pass either a contest_id (e.g. nyqp_2025) or a path to the config file.
+Override the logs directory with --logs if it's not at ./logs/.
 """
 
 import json
 import sys
+import argparse
 import subprocess
 from pathlib import Path
 
@@ -31,24 +37,40 @@ def run(script, args, script_dir):
 
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: process_contest.py <config.json> <logs_dir>")
-        print("  config.json  - contest config file (e.g. config/nyqp_2025.json)")
-        print("  logs_dir     - directory containing .log files")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description='Run the full QSO party analysis pipeline.',
+        epilog='Run from your contest working directory (e.g. ~/QSOPARTY/NYQP2025).'
+    )
+    parser.add_argument('contest', help='Contest ID (e.g. nyqp_2025) or path to config JSON')
+    parser.add_argument('--logs', default=None,
+                        help='Logs directory (default: ./logs/ in current directory)')
+    args = parser.parse_args()
 
-    config_path = Path(sys.argv[1])
-    logs_dir = Path(sys.argv[2])
+    repo_root = Path(__file__).parent.parent
+    work_dir  = Path.cwd()
+
+    # Resolve config: accept contest_id name or explicit path
+    config_arg = Path(args.contest)
+    if config_arg.suffix == '.json' and config_arg.exists():
+        config_path = config_arg
+    else:
+        contest_id_guess = args.contest.removesuffix('.json')
+        config_path = repo_root / 'config' / f'{contest_id_guess}.json'
 
     if not config_path.exists():
-        print(f"Config file not found: {config_path}")
-        sys.exit(1)
-    if not logs_dir.is_dir():
-        print(f"Logs directory not found: {logs_dir}")
+        print(f"Config not found: {config_path}")
+        print(f"  Put your config in {repo_root / 'config'}/")
         sys.exit(1)
 
     with open(config_path, 'r') as f:
         config = json.load(f)
+
+    # Logs: --logs arg > ./logs/ in CWD
+    logs_dir = Path(args.logs) if args.logs else work_dir / 'logs'
+    if not logs_dir.is_dir():
+        print(f"Logs directory not found: {logs_dir}")
+        print(f"  Create a 'logs' folder in {work_dir} and put your Cabrillo files in it.")
+        sys.exit(1)
 
     contest_id = config['contest_id']
     contest_name = f"{config['year']} {config['name']}"
@@ -58,14 +80,13 @@ def main():
     region_term = config.get('region_term', 'County')
     host_type   = config.get('host_type', 'State')
 
-    # Derived paths
-    repo_root = Path(__file__).parent.parent
+    # All working paths relative to CWD (where you launched from)
     script_dir = repo_root / 'scripts'
-    data_dir = repo_root / 'data' / contest_id
-    output_dir = repo_root / 'outputs' / contest_id
+    data_dir   = work_dir / 'data'
+    output_dir = work_dir / 'outputs'
     charts_dir = output_dir / 'charts'
-    html_dir = output_dir / 'html'
-    stats_dir = output_dir / 'stats'
+    html_dir   = output_dir / 'html'
+    stats_dir  = output_dir / 'stats'
 
     meta_db = data_dir / 'contest_meta.db'
     qso_db = data_dir / 'contest_qsos.db'
@@ -169,7 +190,7 @@ def main():
         end_date = _start_date
     contest_end_iso = f"{end_date}T{schedule['end_time'].replace('Z', '')}"
 
-    # Boundaries file (used by stats and all map/animation scripts)
+    # Boundaries file lives in the repo's reference/ dir
     _boundaries_rel = config.get('boundaries', 'reference/ny_counties.json')
     ny_boundaries = repo_root / _boundaries_rel
 
@@ -234,7 +255,7 @@ def main():
         '--title', f'{contest_name} Mobile Activity'
     ], script_dir)
 
-    # 11. Generate state-level animation (requires US boundaries)
+    # 11. Generate state-level animation (requires US boundaries in repo)
     us_boundaries = repo_root / 'reference' / 'us_states.json'
     if us_boundaries.exists():
         print("\n[11/11] Generating US state animation...")
@@ -278,8 +299,9 @@ def main():
         run_args += ['--dx-countries', dx_countries]
     run('generate_landing_page.py', run_args, script_dir)
 
-    print(f"\n=== Done! Outputs in {output_dir} ===")
-    print(f"    Landing page: {landing_html}")
+    print(f"\n=== Done! ===")
+    print(f"  Outputs: {output_dir}")
+    print(f"  Landing: {landing_html}")
 
 
 if __name__ == '__main__':
