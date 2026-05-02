@@ -4,19 +4,21 @@ Contest processing pipeline orchestrator.
 
 Run from your contest working directory:
     cd ~/QSOPARTY/NYQP2025
-    python3 /path/to/qso-party-tools/scripts/process_contest.py nyqp_2025
+    python3 /path/to/qso-party-tools/scripts/process_contest.py
+
+Config lookup order:
+    1. contest.json in the current directory  (simplest — just drop it here)
+    2. contest ID argument: process_contest.py nyqp_2025
+    3. Explicit path:       process_contest.py config/nyqp_2025.json
 
 Expected layout of the working directory (created automatically):
+    contest.json - contest config (copy from repo config/ and rename)
     logs/        - Cabrillo log files (must exist before running)
     data/        - SQLite databases (created by pipeline)
     outputs/
       charts/    - PNG charts and thumbnails
       html/      - HTML maps, animations, stats
       stats/     - QC reports and JSON data files
-
-The contest config (nyqp_2025.json) lives in the qso-party-tools repo.
-Pass either a contest_id (e.g. nyqp_2025) or a path to the config file.
-Override the logs directory with --logs if it's not at ./logs/.
 """
 
 import json
@@ -41,7 +43,9 @@ def main():
         description='Run the full QSO party analysis pipeline.',
         epilog='Run from your contest working directory (e.g. ~/QSOPARTY/NYQP2025).'
     )
-    parser.add_argument('contest', help='Contest ID (e.g. nyqp_2025) or path to config JSON')
+    parser.add_argument('contest', nargs='?', default=None,
+                        help='Contest ID (e.g. nyqp_2025) or path to config JSON. '
+                             'If omitted, looks for contest.json in the current directory.')
     parser.add_argument('--logs', default=None,
                         help='Logs directory (default: ./logs/ in current directory)')
     args = parser.parse_args()
@@ -49,17 +53,29 @@ def main():
     repo_root = Path(__file__).parent.parent
     work_dir  = Path.cwd()
 
-    # Resolve config: accept contest_id name or explicit path
-    config_arg = Path(args.contest)
-    if config_arg.suffix == '.json' and config_arg.exists():
-        config_path = config_arg
+    # Resolve config — priority order:
+    #   1. ./contest.json in CWD (no arg needed)
+    #   2. explicit path or contest_id passed as argument
+    #   3. repo config/<contest_id>.json
+    local_config = work_dir / 'contest.json'
+    if args.contest is None:
+        config_path = local_config
     else:
-        contest_id_guess = args.contest.removesuffix('.json')
-        config_path = repo_root / 'config' / f'{contest_id_guess}.json'
+        config_arg = Path(args.contest)
+        if config_arg.suffix == '.json' and config_arg.exists():
+            config_path = config_arg
+        else:
+            contest_id_guess = args.contest.removesuffix('.json')
+            config_path = repo_root / 'config' / f'{contest_id_guess}.json'
 
     if not config_path.exists():
-        print(f"Config not found: {config_path}")
-        print(f"  Put your config in {repo_root / 'config'}/")
+        if args.contest is None:
+            print(f"No contest.json found in {work_dir}")
+            print(f"  Either drop a contest.json here, or pass a contest ID:")
+            print(f"  process_contest nyqp_2025")
+        else:
+            print(f"Config not found: {config_path}")
+            print(f"  Repo configs live in: {repo_root / 'config'}/")
         sys.exit(1)
 
     with open(config_path, 'r') as f:
